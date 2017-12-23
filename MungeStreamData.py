@@ -12,7 +12,7 @@ import getopt
 import re
 import platform
 from pathlib import Path
-import xlrd
+from xlrd import open_workbook, XLRDError
 
 #import xlrd
 #book = xlrd.open_workbook("myfile.xls")
@@ -40,11 +40,36 @@ def collectFiles(inputFolder, outputFolder):
                 # process
                 m = re.match( logFilePattern, file)
                 if m:
-                    print('Adding '+os.path.join(subdir, file))
-                    filesToRead.append('"'+os.path.join(subdir, file)+'"')
+                    # print('Adding '+os.path.join(subdir, file))
+                    filesToRead.append(os.path.join(subdir, file))
     return filesToRead
-        
 
+# Process the log files found
+def processLogFiles(logFiles):
+    for file in logFiles:
+        processLogFile(file)
+
+def processLogFile(logFile):
+    print('Processing '+logFile)
+    try:
+        book = open_workbook(logFile)
+    except XLRDError as e:
+        print('Error opening workbook:'+e)
+        return
+    
+    sheet = book.sheet_by_index(0)
+    # Site is always B19 per Evan
+    site_name = sheet.cell_value(rowx=18, colx=1)
+    
+    print ('Site name: '+site_name)
+#print("The number of worksheets is {0}".format(book.nsheets))
+#print("Worksheet name(s): {0}".format(book.sheet_names()))
+#sh = book.sheet_by_index(0)
+#print("{0} {1} {2}".format(sh.name, sh.nrows, sh.ncols))
+#print("Cell D30 is {0}".format(sh.cell_value(rowx=29, =3)))
+#for rx in range(sh.nrows):
+
+ 
 def helpMessage():
       print('MungeStreamData.py [-o <outputFolder>] -i <inputFolder>')
       print('Processes all data files under <inputFolder>')
@@ -81,7 +106,8 @@ def main(argv):
    print('Processing data in "'+ inputFolder+ '"...')
    
    files = collectFiles(inputFolder, outputFolder)
-   print(files, ''+files.count)
+   processLogFiles(files)
+   
 
 if __name__ == "__main__":
    main(sys.argv[1:])
