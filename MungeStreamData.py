@@ -9,27 +9,37 @@
 import os
 import sys
 import getopt
+import re
 import platform
 from pathlib import Path
+import xlrd
 
+#import xlrd
+#book = xlrd.open_workbook("myfile.xls")
+#print("The number of worksheets is {0}".format(book.nsheets))
+#print("Worksheet name(s): {0}".format(book.sheet_names()))
+#sh = book.sheet_by_index(0)
+#print("{0} {1} {2}".format(sh.name, sh.nrows, sh.ncols))
+#print("Cell D30 is {0}".format(sh.cell_value(rowx=29, colx=3)))
+#for rx in range(sh.nrows):
+#    print(sh.row(rx))
 
-
-# Files to exclude from the Dropbox list if present
+# Files to exclude from if present
 filesToExclude = ['.dropbox', 'desktop.ini' ]
 
-# Directories to include in Zip
-# If any one missing, it is skipped
-dirsToInclude = ['Artifacts', 'Surveyor', 'To-From Client', 'StaticAnalysis']
 
 # Locate files to process
 def collectFiles(inputFolder, outputFolder):
     filesToRead = []
+    # Regular expression to identify files we are interested in processing
+    logFilePattern = re.compile('LOG.*\.xls')
     for subdir, dirs, files in os.walk(inputFolder):
         for file in files:
             if file not in filesToExclude:
-                # Check if this file matches one of the directories we want to include
-                # skip others, e.g. To-From Target
-                if len([x for x in dirsToInclude if subdir.find('\\'+x)>0])>0:
+                # Check if this file matches the pattern for a log file to
+                # process
+                m = re.match( logFilePattern, file)
+                if m:
                     print('Adding '+os.path.join(subdir, file))
                     filesToRead.append('"'+os.path.join(subdir, file)+'"')
     return filesToRead
@@ -54,15 +64,15 @@ def main(argv):
    inputFolder = '.'
 
    try:
-      opts, args = getopt.getopt(argv,"iho:",["input=", "help", "output="])
+      opts, args = getopt.getopt(argv,"i:ho:",["input=", "help", "output="])
    except getopt.GetoptError:
       helpMessage()
    for opt, arg in opts:
       if opt == '-h':
          helpMessage()
-      elif opt in ("-o", "--output:"):
+      elif opt in ("-o", "--output"):
          outputFolder = arg
-      elif opt in ("-i", "--input:"):
+      elif opt in ("-i", "--input"):
          inputFolder = arg
 
    if inputFolder == '':
@@ -71,7 +81,7 @@ def main(argv):
    print('Processing data in "'+ inputFolder+ '"...')
    
    files = collectFiles(inputFolder, outputFolder)
-   print(files)
+   print(files, ''+files.count)
 
 if __name__ == "__main__":
    main(sys.argv[1:])

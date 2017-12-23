@@ -14,7 +14,7 @@ Each file has two sheets
   - Sometimes the days are "on top" of each other in the same column
   - Sometimes the file has the data for a single day
   - Sometimes the data has the data for a single day, but for some reason the first several hundred rows are empty
-#What I want
+# What I want
 1. First, I want the raw data files organized: one file per site per measurement day
   - Named as "SITENAME_YYYY-MM-DD" (e.g. YELAC_2017-10-01)
   - These files should be put in the correct folders (either by measurement days or sites?)
@@ -27,4 +27,14 @@ Each site has its own sheet
  - I want to populate the tables with median values from each date/time and parameter
 _OPEN ISSUE:_ From there, I will prepare the EIM files?
 Eventually, I think I will need each parameter for each site to be in its own EIM-formatted CSV which we can then upload to DOE
+
+# Pre-requisites
+The XlRD package to read the Excel files.  Make sure this is installed for Python 3 on your machine:
+
+    J:\Dropbox (Personal)\src\KCStreamDataTool>py -V
+    Python 3.6.3
+    J:\Dropbox (Personal)\src\KCStreamDataTool>py -m pip install xlrd-1.1.0-py2.py3-none-any.whl
+    Processing j:\dropbox (personal)\src\kcstreamdatatool\xlrd-1.1.0-py2.py3-none-any.whl
+    Installing collected packages: xlrd
+    Successfully installed xlrd-1.1.0
 
