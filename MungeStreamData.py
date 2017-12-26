@@ -9,9 +9,11 @@
 import os
 from collections import namedtuple
 import sys
+import glob
 import ctypes
 import datetime
 import getopt
+import time
 import re
 import platform
 from pathlib import Path
@@ -69,27 +71,59 @@ def collectFiles(inputFolder, outputFolder):
                     
     return filesToRead
 
+# Thanks to https://stackoverflow.com/questions/7619319/python-xlrd-suppress-warning-messages
+class XlrdLogFileFilter(object):
+    def __init__(self, mylogfile=sys.stdout, skip_list=()):
+        self.f = mylogfile
+        self.state = 0
+        self.skip_list = skip_list
+    def write(self, data):
+        if self.state == 0:
+            found = any(x in data for x in self.skip_list)
+            if not found:
+                self.f.write(data)
+                return
+            if data[-1] != '\n':
+                self.state = 1
+        else:
+            if data != '\n':
+                self.f.write(data)
+            self.state = 0
+    
 # Process the log files found
 def processLogFiles(logFiles):
     ret = True      # optimistic
     
-    for file in logFiles:
-        if not processLogFile(file):
-            print('Error processing '+file)
-            ret = False
-    return ret
-        
+    xlrdLogFileHandle = open("xlrd_log_file.txt", "w+")
+    skip_these = (
+        "WARNING *** OLE2 inconsistency",
+        )
+    try:        
+        xlrdLogFile = XlrdLogFileFilter(xlrdLogFileHandle, skip_these)
+        for file in logFiles:
+            xlrdLogFileHandle.write("=== %s ===\n" % file)
+            if not processLogFile(file, xlrdLogFile):
+                xlrdLogFileHandle.write('Error processing %s\n' % file)
+                ret = False
+    finally:
+        xlrdLogFileHandle.close()
 
-def processLogFile(logFile):
+    return ret
+
+# Process one raw data file (a/k/a LogFile which is confusing, since it conflicts
+# with XLRD's use of LogFile as a output of errors, warnings, etc.)
+# the second parameter here is used for XLRD's log  messages
+ 
+def processLogFile(rawDataFile, xlrdLog):
     
     global sites, outputCSV
     
-    if verbose:
-        print('Processing '+logFile)
+    print('processLogFile: Processing '+rawDataFile)
     try:
-        book = open_workbook(logFile)
+        book = open_workbook(rawDataFile, logfile=xlrdLog)
     except XLRDError as e:
         print('Error opening workbook:'+e)
+        xlrdLog.write('Error opening workbook %s: %s\n' % (rawDataFile, str(e)))
         return None
     
     sheet = book.sheet_by_index(0)
@@ -101,7 +135,7 @@ def processLogFile(logFile):
 
     if siteName not in sites:
         # Not in list yet - add a tuple
-        siteData = SiteData(logFile, minDate=None, maxDate=None, numRecs=0)
+        siteData = SiteData(rawDataFile, minDate=None, maxDate=None, numRecs=0)
         # Open the sheet and grab the data, copying it to the output CSV
         try:
             dataSheet = book.sheet_by_index(1)
@@ -109,7 +143,7 @@ def processLogFile(logFile):
                 print('Sheets: ',book.sheet_names())
 
         except XLRDError as e:
-            print('Error getting data sheet for '+logFile+' - Skipping Workbook for "'+siteName+'"')
+            xlrdLog.write('Error getting data sheet for '+rawDataFile+' - Skipping Workbook for "'+siteName+'"\n')
             return False
 
         # Switch to data sheet
@@ -117,8 +151,10 @@ def processLogFile(logFile):
         
         # Get first line from sheet and analyze
         numColumns = sheet.ncols   # Number of columns
-        if sheet.cell_value(rowx=0,colx=0) == u'Date':            
-            for rowIndex in range(1, sheet.nrows):    # Iterate through rows
+        if sheet.cell_value(rowx=0,colx=0) == u'Date':
+            # Print header row
+            # [outputCSV.write(sheet.cell(0,x).value+',') if x < numColumns-1 else outputCSV.write(sheet.cell(0,x).value+'\n') for x in range(0, numColumns)]            
+            for rowIndex in range(0, sheet.nrows):    # Iterate through rows
                 if verbose:
                     print ('-'*40)
                     print ('Row: %s' % rowIndex)   # Print row number
@@ -128,19 +164,34 @@ def processLogFile(logFile):
                     
                     # Special case - time is a separate value, but returned as date - skip it since
                     # we don't care about time, only date
-                    if (columnIndex == 1 and cellType == 3):
-                        continue
+                    if (columnIndex == 1 and ( cellType == 3 or rowIndex == 0 )):
+                        continue                     
                     else:
+                        # Prefix each row with the site name of the data
+                        if (columnIndex == 0):
+                            if (rowIndex == 0):
+                                outputCSV.write('Site')
+                            else:
+                                outputCSV.write(siteName)
+                            outputCSV.write(',')
                         if verbose:
                             print ('Column: [%s] is [%s] : [%s]' % (columnIndex, cellType, cellValue))
                         # Somewhere these numeric values have to be defined, right?
                         # 3 == date per https://pythonhosted.org/xlrd3/cell.html
                         if (cellType == 3):
-                            outputCSV.write(str(datetime.datetime(*xlrd.xldate_as_tuple(cellValue.value, book.datemode)))+",")
+                            year, month, day, hour, minute, second = xldate.xldate_as_tuple(cellValue.value, book.datemode)
+                            outputCSV.write('%4d-%02d-%02d' % (year, month, day))
                         elif (cellType in [1, 2]):   # 1 = text, 2 = number
-                            outputCSV.write(str(cellValue.value)+",")
+                            outputCSV.write(str(cellValue.value))
                         else:
-                            print ('Unknown value type for [%s,%s] : %s' % (rowIndex, columnIndex, cellType))
+                            xlrdLog.write('%s: Unknown value type for [%s,%s] : %s' % (rawDataFile, rowIndex, columnIndex, cellType))
+                        if (columnIndex < numColumns-1):
+                            outputCSV.write(',')        # skip , after last column value
+                outputCSV.write('\n')       # Terminate line
+        else:
+            print('First row of workbook is not Date.. skipping')
+           
+        print('%d rows.' % sheet.nrows)
         return True
     # print('*WARNING* Duplicate data for site "'+siteName+'" in '+sites{siteName}.filePath)
     return False
@@ -203,6 +254,7 @@ def main(argv):
    
     files = collectFiles(inputFolder, outputFolder)
     processLogFiles(files)
+    print('Done!')
    
 
 if __name__ == "__main__":
