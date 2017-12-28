@@ -33,8 +33,8 @@ import xlrd
 # Files to exclude from if present
 filesToExclude = ['.dropbox', 'desktop.ini' ]
 
-# Hash of sites encountered - to look for dupes - the value is a list containing
-# path name to the file and the dates
+# Dictionary of sites encountered - to look for dupes - the value is a SiteData named tuple containing
+# path name to the file and the dates for which we have data
 sites = {}
 
 # Each item in sites has site meta data:
@@ -53,7 +53,7 @@ outputCSV = None
 def collectFiles(inputFolder, outputFolder):
     filesToRead = []
     # Regular expression to identify files we are interested in processing
-    logFilePattern = re.compile('LOG.*\.xls')
+    logFilePattern = re.compile('.*\.xls$')
     for subdir, dirs, files in os.walk(inputFolder):
         for file in files:
             if file not in filesToExclude:
@@ -117,84 +117,121 @@ def processLogFiles(logFiles):
 def processLogFile(rawDataFile, xlrdLog):
     
     global sites, outputCSV
+    nRows = 0           # Number rows written to output
+    earliestDateSeen = datetime.date.max        # set to HIGHEST date so the first one we encounter is less
+    latestDateSeen = datetime.date.min
+    ret = True
     
     print('processLogFile: Processing '+rawDataFile)
     try:
         book = open_workbook(rawDataFile, logfile=xlrdLog)
     except XLRDError as e:
-        print('Error opening workbook:'+e)
+        print('Error opening workbook: %s\n' % (str(e)))
         xlrdLog.write('Error opening workbook %s: %s\n' % (rawDataFile, str(e)))
-        return None
+        return False
     
     sheet = book.sheet_by_index(0)
     # Site is always B19 per Evan
     siteName = sheet.cell_value(rowx=18, colx=1)
     
+    # Some sanity checking
+    if book.nsheets != 2 or not isinstance(siteName, str):
+        print('Workbook not in expected format')
+        xlrdLog.write('Workbook %s not in expected format' % (rawDataFile))
+        return False
+    
     if verbose:
         print ('Site name: '+siteName)
 
-    if siteName not in sites:
-        # Not in list yet - add a tuple
-        siteData = SiteData(rawDataFile, minDate=None, maxDate=None, numRecs=0)
         # Open the sheet and grab the data, copying it to the output CSV
-        try:
-            dataSheet = book.sheet_by_index(1)
+    try:
+        dataSheet = book.sheet_by_index(1)
+        if verbose:
+            print('Sheets: ',book.sheet_names())
+
+    except XLRDError as e:
+        print('Workbook does not have correct number of sheets')
+        xlrdLog.write('Error getting data sheet for '+rawDataFile+' - Skipping Workbook for "'+siteName+'"\n')
+        return False
+
+    # Switch to data sheet
+    sheet = book.sheet_by_index(1)
+    
+    # Get first line from sheet and analyze
+    numColumns = sheet.ncols   # Number of columns
+    
+    # Check if workbook seems to match expected format:
+    # 2 sheets
+    # first cell in 2nd sheet has Date in the name
+    if sheet.cell_value(rowx=0,colx=0) == u'Date' and book.nsheets == 2:
+        # Print header row
+        # [outputCSV.write(sheet.cell(0,x).value+',') if x < numColumns-1 else outputCSV.write(sheet.cell(0,x).value+'\n') for x in range(0, numColumns)]            
+        for rowIndex in range(0, sheet.nrows):    # Iterate through rows
             if verbose:
-                print('Sheets: ',book.sheet_names())
-
-        except XLRDError as e:
-            xlrdLog.write('Error getting data sheet for '+rawDataFile+' - Skipping Workbook for "'+siteName+'"\n')
-            return False
-
-        # Switch to data sheet
-        sheet = book.sheet_by_index(1)
-        
-        # Get first line from sheet and analyze
-        numColumns = sheet.ncols   # Number of columns
-        if sheet.cell_value(rowx=0,colx=0) == u'Date':
-            # Print header row
-            # [outputCSV.write(sheet.cell(0,x).value+',') if x < numColumns-1 else outputCSV.write(sheet.cell(0,x).value+'\n') for x in range(0, numColumns)]            
-            for rowIndex in range(0, sheet.nrows):    # Iterate through rows
+                print ('-'*40)
+                print ('Row: %s' % rowIndex)   # Print row number
+            # Skip entirely blank rows
+            if sheet.row_types(rowIndex).count(0) == numColumns:
                 if verbose:
-                    print ('-'*40)
-                    print ('Row: %s' % rowIndex)   # Print row number
+                    print('Skipping blank row')
+                continue
+            else:
+                nRows += 1
                 for columnIndex in range(0, numColumns):  # Iterate through columns
                     cellValue = sheet.cell(rowIndex, columnIndex)  # Get cell object by row, col
                     cellType = cellValue.ctype
                     
-                    # Special case - time is a separate value, but returned as date - skip it since
-                    # we don't care about time, only date
+                    # Special case - time is a separate column in input files, but returned as date
+                    # skip it since we don't care about time, only date
                     if (columnIndex == 1 and ( cellType == 3 or rowIndex == 0 )):
-                        continue                     
+                        continue
                     else:
                         # Prefix each row with the site name of the data
                         if (columnIndex == 0):
                             if (rowIndex == 0):
-                                outputCSV.write('Site')
+                                outputCSV.write('Site, RawDataFile')
                             else:
-                                outputCSV.write(siteName)
+                                outputCSV.write(siteName+','+rawDataFile)
                             outputCSV.write(',')
                         if verbose:
                             print ('Column: [%s] is [%s] : [%s]' % (columnIndex, cellType, cellValue))
+                            
                         # Somewhere these numeric values have to be defined, right?
                         # 3 == date per https://pythonhosted.org/xlrd3/cell.html
                         if (cellType == 3):
                             year, month, day, hour, minute, second = xldate.xldate_as_tuple(cellValue.value, book.datemode)
                             outputCSV.write('%4d-%02d-%02d' % (year, month, day))
+                            d = datetime.date(year,month,day)
+                            if (d < earliestDateSeen):
+                                earliestDateSeen = d
+                            if (d > latestDateSeen):
+                                latestDateSeen = d
+                            
                         elif (cellType in [1, 2]):   # 1 = text, 2 = number
-                            outputCSV.write(str(cellValue.value))
+                                # Other column - e.g. ph, Turb.FNU, etc.
+                                outputCSV.write(str(cellValue.value))
                         else:
                             xlrdLog.write('%s: Unknown value type for [%s,%s] : %s' % (rawDataFile, rowIndex, columnIndex, cellType))
                         if (columnIndex < numColumns-1):
                             outputCSV.write(',')        # skip , after last column value
                 outputCSV.write('\n')       # Terminate line
+    else:
+        print('Wrong # of sheets or first row of 2nd worksheet is not Date.. skipping')
+        ret = False
+       
+    print('%d rows.' % sheet.nrows)
+        
+    if ret:
+        siteData = SiteData(rawDataFile, minDate=earliestDateSeen, maxDate=latestDateSeen, numRecs=nRows)
+        if siteName not in sites:
+            # Not in list yet - add a tuple
+            print("New site encountered: " + siteName)
+            sites[siteName] = [ siteData ]
         else:
-            print('First row of workbook is not Date.. skipping')
-           
-        print('%d rows.' % sheet.nrows)
-        return True
-    # print('*WARNING* Duplicate data for site "'+siteName+'" in '+sites{siteName}.filePath)
-    return False
+            print("Additional data for site: " + siteName)
+            sites[siteName].append(siteData)
+
+    return ret
         
 #print("The number of worksheets is {0}".format(book.nsheets))
 #print("Worksheet name(s): {0}".format(book.sheet_names()))
@@ -221,6 +258,7 @@ def main(argv):
    # Default output folder
     global verbose
     global outputCSV
+    global sites
    
     outputFolder = 'ProcessedStreamData'
     inputFolder = '.'
@@ -255,6 +293,14 @@ def main(argv):
     files = collectFiles(inputFolder, outputFolder)
     processLogFiles(files)
     print('Done!')
+    
+    # Dump out collected per-site data
+    for site in sites:
+        print('For "' + site +'"')
+        for item in sites[site]:
+            print('\tData from %s to %s' % (str(item.minDate), str(item.maxDate)))
+            print('\t%d records from: %s' % (item.numRecs, item.filePath))
+        print('-'*50)
    
 
 if __name__ == "__main__":
