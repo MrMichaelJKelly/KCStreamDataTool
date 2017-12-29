@@ -144,17 +144,31 @@ def processLogFile(rawDataFile, xlrdLog):
     sheet = book.sheet_by_index(0)
     # Site is always B19 per Evan
     siteName = sheet.cell_value(rowx=18, colx=1)
-    
-    # Some sanity checking
+
+    # Some sanity checking - is the book in the expected format?
     if book.nsheets != 2 or not isinstance(siteName, str):
         print('Workbook not in expected format')
         xlrdLog.write('Workbook %s not in expected format\n' % (rawDataFile))
         return False
-    
-    if verbose:
-        print ('Site name: '+siteName)
 
-        # Open the sheet and grab the data, copying it to the output CSV
+    print ('Site name in data file: '+siteName)
+    
+    # Map some sitenames together
+    siteName = siteName.upper()
+    siteMap = {'WHISI' : 'WHIRU',
+               'RUTZP.OUT' : 'RUTZP.outflow',
+               'WHIRS' : 'WHISP',
+               'WHIRZ' : 'WHISP',
+               'RUTZPOND' : 'RUTZP',
+               'YELPER' : 'YELPR',
+               'RUTZEROUT' : 'RUTZP.outflow'
+    }
+    
+    siteName = siteMap.get(siteName, siteName)
+    
+    print ('Site name: '+siteName)
+
+    # Open the sheet and grab the data, copying it to the output CSV
     try:
         dataSheet = book.sheet_by_index(1)
         if verbose:
@@ -264,16 +278,16 @@ def processLogFile(rawDataFile, xlrdLog):
         print('Wrong # of sheets or first row of 2nd worksheet is not Date.. skipping')
         ret = False
        
-    print('%d rows.' % sheet.nrows)
+    print('%d data rows read.' % sheet.nrows)
         
     if ret:
         siteData = SiteData(rawDataFile, minDate=earliestDateSeen, maxDate=latestDateSeen, numRecs=nRows)
         if siteName not in sites:
             # Not in list yet - add a tuple
-            print("New site encountered: " + siteName)
+            print("This data is for a new site: " + siteName)
             sites[siteName] = [ siteData ]
         else:
-            print("Additional data for site: " + siteName)
+            print("This is additional data for site: " + siteName)
             sites[siteName].append(siteData)
 
     return ret
