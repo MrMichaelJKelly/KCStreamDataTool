@@ -49,6 +49,9 @@ verbose = False
 # handle to output CSV file
 outputCSV = None
 
+# Standard data headers - some are in a slightly different format and have to be massaged a bit...
+columnHeaders = [ 'Date', 'Temp.[C]', 'pH', 'EC[uS/cm]', 'D.O.[%]', 'D.O.[ppm]', 'Turb.FNU', 'Remarks', 'Other' ]
+
 # Locate files to process
 def collectFiles(inputFolder, outputFolder):
     filesToRead = []
@@ -100,6 +103,14 @@ def processLogFiles(logFiles):
         )
     try:        
         xlrdLogFile = XlrdLogFileFilter(xlrdLogFileHandle, skip_these)
+        
+        # Write the CSV header row
+        outputCSV.write('Site, RawDataFile,')
+        for colName in columnHeaders:
+            outputCSV.write(colName+',')
+        outputCSV.write('\n')
+        
+        # Process each data (log) file
         for file in logFiles:
             xlrdLogFileHandle.write("=== %s ===\n" % file)
             if not processLogFile(file, xlrdLogFile):
@@ -137,7 +148,7 @@ def processLogFile(rawDataFile, xlrdLog):
     # Some sanity checking
     if book.nsheets != 2 or not isinstance(siteName, str):
         print('Workbook not in expected format')
-        xlrdLog.write('Workbook %s not in expected format' % (rawDataFile))
+        xlrdLog.write('Workbook %s not in expected format\n' % (rawDataFile))
         return False
     
     if verbose:
@@ -165,8 +176,40 @@ def processLogFile(rawDataFile, xlrdLog):
     # first cell in 2nd sheet has Date in the name
     if sheet.cell_value(rowx=0,colx=0) == u'Date' and book.nsheets == 2:
         # Print header row
-        # [outputCSV.write(sheet.cell(0,x).value+',') if x < numColumns-1 else outputCSV.write(sheet.cell(0,x).value+'\n') for x in range(0, numColumns)]            
-        for rowIndex in range(0, sheet.nrows):    # Iterate through rows
+        # [outputCSV.write(sheet.cell(0,x).value+',') if x < numColumns-1 else outputCSV.write(sheet.cell(0,x).value+'\n') for x in range(0, numColumns)]
+        # Check to see if we have one of those books where the data doesn't match - in that case we have to do
+        # some magic transposing
+        # Two variations:
+        # Date	Temp.[?C]	pH 	EC[?S/cm]	D.O.[%]	    D.O.[ppm]	Turb.FNU	Remarks
+        # Date	Temp.[?C]	pH 	D.O.[%]	    D.O.[ppm]	Turb.FNU	EC[?S/cm]
+        # We've adopted the first one (which is the most common) as the standard, so if we
+        # detect the second, we have to do move columns around as we emit them to the CSV
+        # column
+        
+        nonStandardColumns = False
+
+        if numColumns > 4 and sheet.cell(0, 4).ctype == 1 and sheet.cell(0, 4).value == 'D.O.[%]':
+            nonStandardColumns = True           
+                # Transpose columns if needed - column indices are in the
+                # source sheet - they will be pulled from those source columns
+                # and then written to columns 2, 3, 4 etc. - since 0 is the site name
+                # and 1 is the file name.
+                # Item      Standard Sheet      Weird Sheet
+                # Temp          2                   2
+                # ph            3                   3
+                # EC[uS/cm]     4                   7
+                # D.O.[%]       5                   4
+                # D.O.[ppm]     6                   5
+                # Turb.FNU      7                   6
+                # Remarks       8                   8           
+            colOrder = [0, 2, 3, 7, 4, 5, 6, 8]
+            print("This sheet has non-standard column ordering; adjusting columns to match standard.\n")
+        else:
+            colOrder = [0, 2, 3, 4, 5, 6, 7, 8]
+        
+        nColsToWrite = len(colOrder)
+
+        for rowIndex in range(1, sheet.nrows):    # Iterate through data rows
             if verbose:
                 print ('-'*40)
                 print ('Row: %s' % rowIndex)   # Print row number
@@ -176,45 +219,47 @@ def processLogFile(rawDataFile, xlrdLog):
                     print('Skipping blank row')
                 continue
             else:
-                nRows += 1
-                for columnIndex in range(0, numColumns):  # Iterate through columns
+                nRows += 1              
+  
+            nCols = 0           # Number of columns processed - so we can omit the last "," in the CSV output
+            
+            for columnIndex in colOrder:  # Iterate through columns
+                nCols += 1
+                if columnIndex >= numColumns:
+                    continue            # don't access columns that don't exist on this sheet
+                else:
                     cellValue = sheet.cell(rowIndex, columnIndex)  # Get cell object by row, col
                     cellType = cellValue.ctype
                     
-                    # Special case - time is a separate column in input files, but returned as date
-                    # skip it since we don't care about time, only date
-                    if (columnIndex == 1 and ( cellType == 3 or rowIndex == 0 )):
-                        continue
+                    # Prefix each row with the site name of the data and the
+                    # file name it came from
+                    if (columnIndex == 0):
+                        outputCSV.write(siteName+','+rawDataFile+',')
+                        
+                    if verbose:
+                        print ('Column: [%s] is [%s] : [%s]' % (columnIndex, cellType, cellValue))
+                        
+                    # Somewhere these numeric values have to be defined, right?
+                    # 3 == date per https://pythonhosted.org/xlrd3/cell.html
+                    if (cellType == 3):
+                        year, month, day, hour, minute, second = xldate.xldate_as_tuple(cellValue.value, book.datemode)
+                        outputCSV.write('%4d-%02d-%02d' % (year, month, day))
+                        d = datetime.date(year,month,day)
+                        if (d < earliestDateSeen):
+                            earliestDateSeen = d
+                        if (d > latestDateSeen):
+                            latestDateSeen = d
+                        
+                    elif (cellType in [1, 2]):   # 1 = text, 2 = number
+                            # Other column - e.g. ph, Turb.FNU, etc.
+                            outputCSV.write(str(cellValue.value))
                     else:
-                        # Prefix each row with the site name of the data
-                        if (columnIndex == 0):
-                            if (rowIndex == 0):
-                                outputCSV.write('Site, RawDataFile')
-                            else:
-                                outputCSV.write(siteName+','+rawDataFile)
-                            outputCSV.write(',')
-                        if verbose:
-                            print ('Column: [%s] is [%s] : [%s]' % (columnIndex, cellType, cellValue))
-                            
-                        # Somewhere these numeric values have to be defined, right?
-                        # 3 == date per https://pythonhosted.org/xlrd3/cell.html
-                        if (cellType == 3):
-                            year, month, day, hour, minute, second = xldate.xldate_as_tuple(cellValue.value, book.datemode)
-                            outputCSV.write('%4d-%02d-%02d' % (year, month, day))
-                            d = datetime.date(year,month,day)
-                            if (d < earliestDateSeen):
-                                earliestDateSeen = d
-                            if (d > latestDateSeen):
-                                latestDateSeen = d
-                            
-                        elif (cellType in [1, 2]):   # 1 = text, 2 = number
-                                # Other column - e.g. ph, Turb.FNU, etc.
-                                outputCSV.write(str(cellValue.value))
-                        else:
-                            xlrdLog.write('%s: Unknown value type for [%s,%s] : %s' % (rawDataFile, rowIndex, columnIndex, cellType))
-                        if (columnIndex < numColumns-1):
-                            outputCSV.write(',')        # skip , after last column value
-                outputCSV.write('\n')       # Terminate line
+                        xlrdLog.write('%s: Unknown value type for [%s,%s] : %s\n' % (rawDataFile, rowIndex, columnIndex, cellType))
+                    if (nCols < nColsToWrite):
+                        outputCSV.write(',')        # append , except after last column value
+                        
+            # After emitting all columns, terminate the line
+            outputCSV.write('\n')       # Terminate line
     else:
         print('Wrong # of sheets or first row of 2nd worksheet is not Date.. skipping')
         ret = False
