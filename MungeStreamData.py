@@ -13,6 +13,7 @@ import glob
 import ctypes
 import datetime
 import getopt
+from heapq import *
 import time
 import re
 import platform
@@ -51,6 +52,11 @@ outputCSV = None
 
 # Standard data headers - some are in a slightly different format and have to be massaged a bit...
 columnHeaders = [ 'Date', 'Time', 'Temp.[C]', 'pH', 'mV [pH]', 'EC[uS/cm]', 'D.O.[%]', 'D.O.[ppm]', 'Turb.FNU', 'Remarks', 'Other' ]
+
+# This list is 1:1 with columnHeaders and shows which columns we should calculate a median for.
+# The medians are calculated per site/per date.
+calculateMedians = [ False, False, True,      True, True,       True,        True,      True,        True,       False,      False ]
+
 
 # Locate files to process
 def collectFiles(inputFolder, outputFolder):
@@ -92,6 +98,81 @@ class XlrdLogFileFilter(object):
             if data != '\n':
                 self.f.write(data)
             self.state = 0
+
+# Class to find median of a string of values
+# from https://discuss.leetcode.com/topic/27521/short-simple-java-c-python-o-log-n-o-1/2
+# It uses two heaps to divide the values as they arrive
+#
+class MedianFinder(object):
+
+    def __init__(self):
+        self.heaps = [], []
+
+    def addNum(self, num):
+        small, large = self.heaps
+        heappush(small, -heappushpop(large, num))
+        if len(large) < len(small):
+            heappush(large, -heappop(small))
+
+    def findMedian(self):
+        small, large = self.heaps
+        if len(large) > len(small):
+            return float(large[0])
+        return (large[0] - small[0]) / 2.0
+
+# A list of values for a particular site/item by date
+# Designed to be put in a list indexed by site and item.
+# Used to calculate medians after all values have been recorded
+class SiteItemMeasurements(object):
+
+    # Create a holder for a list of median values for a particular measurement for a
+    # particular site.  The list has the values for each date.
+    def __init__(self, site, item):
+        self.siteName = site
+        self.itemName = item
+        self.medianFinders = {}
+    
+    def recordValue(self, dt, val):
+        if dt not in self.medianFinders:      # first time we are seeing this date
+            # A MedianFinder is an accumulator for a particular measurement on a
+            # particular date - each value is recorded in the MedianFinder as it
+            # is seen, and at the end we can ask the MedianFinder to find the median
+            # of all values recorded along the way.
+            self.medianFinders[dt] = MedianFinder()
+        self.medianFinders[dt].addNum(val)
+    
+    # Calculate the medians for each date by enumerating the
+    # dates for which values have been recorded and using the
+    # medianFinder for that date to find the median for this value
+    # on that date.  Returns a dictinoary of median values indexed
+    # by date, e.g.
+    # medians['06/30/2017'] = 13.26
+    def calcMedians(self):
+        medians = {}
+        for dt in self.medianFinders.keys():
+            medians[dt] = self.medianFinders[dt].findMedian()
+        return medians
+
+# This list consists of MedianValue objects that record values per-site, per-date for each item marked
+# above as needing a median.  
+class MedianCollector(object):
+    
+    siteMeasurementValues = {}
+    
+    def addMeasurement(self, site, dt, item, val):
+        if site not in self.siteMeasurementValues:      # first time we are seeing this site
+            self.siteMeasurementValues[site] = {}
+        if item not in self.siteMeasurementValues[site]:    # first time for this measurement
+            # Don't yet have a tracker for this item for this site - add it
+            self.siteMeasurementValues[site][item] = SiteItemMeasurements(site, item)
+        # Now record the value for this item on this date at this site
+        self.siteMeasurementValues[site][item].recordValue(dt, val)
+
+    def emitMedianValuesCSV(self, outputCSVFile):
+        for site, siteCollection in self.siteMeasurementValues.items():
+            for item, itemCollection in siteCollection.items():
+                for dt, medianValue in itemCollection.calcMedians().items():
+                    outputCSVFile.write('%s,"%s",%s,%d\n' % (site, item, dt, medianValue))
     
 # Process the log files found
 def processLogFiles(logFiles):
@@ -109,15 +190,21 @@ def processLogFiles(logFiles):
         for colName in columnHeaders:
             outputCSV.write(colName+',')
         outputCSV.write('\n')
+
+        medianCollector = MedianCollector()       
         
         # Process each data (log) file
         for file in logFiles:
             xlrdLogFileHandle.write("=== %s ===\n" % file)
-            if not processLogFile(file, xlrdLogFile):
+            if not processLogFile(file, xlrdLogFile, medianCollector):
                 xlrdLogFileHandle.write('Error processing %s\n' % file)
                 ret = False
     finally:
         xlrdLogFileHandle.close()
+        
+    # Emit the median values for each measurement
+    outputCSV.write('\n\nMEDIAN VALUES\nSite,Date,Measurement,Median\n')
+    medianCollector.emitMedianValuesCSV(outputCSV)
 
     return ret
 
@@ -125,7 +212,7 @@ def processLogFiles(logFiles):
 # with XLRD's use of LogFile as a output of errors, warnings, etc.)
 # the second parameter here is used for XLRD's log  messages
  
-def processLogFile(rawDataFile, xlrdLog):
+def processLogFile(rawDataFile, xlrdLog, medianCollector):
     
     global sites, outputCSV
     nRows = 0           # Number rows written to output
@@ -270,28 +357,38 @@ def processLogFile(rawDataFile, xlrdLog):
                     # 3 == date per https://pythonhosted.org/xlrd3/cell.html - but there are two
                     # in the data, a date and a time.  0 is he date, 1 is the time.  Sigh.
                     if (cellType == 3):
-                        if (columnIndex == 0):
+                        if (columnIndex == 0):      # Date
                             # Date
                             year, month, day, hour, minute, second = xldate.xldate_as_tuple(cellValue.value, book.datemode)
-                            outputCSV.write('%4d-%02d-%02d' % (year, month, day))
+                            strDate = '%4d-%02d-%02d' % (year, month, day)
+                            outputCSV.write(strDate)
                             d = datetime.date(year,month,day)
                             if (d < earliestDateSeen):
                                 earliestDateSeen = d
                             if (d > latestDateSeen):
                                 latestDateSeen = d
-                        else:
+                        else:  # Only other date value in input is the Time stamp
                             # Just emit time as is.
                             outputCSV.write(str(cellValue.value))
                         
                     elif (cellType in [1, 2]):   # 1 = text, 2 = number
                             # Other column - e.g. ph, Turb.FNU, etc.
                             outputCSV.write(str(cellValue.value))
+                            # Do we need to accumulate values for this for median calculation?
+                            # Note some measurements have '-----' instead of 0 for missing values
+                            # so catch that here by checking only for numeric values
+                            if cellType == 1:
+                                measurementValue = 0
+                            else:
+                                measurementValue = cellValue.value
+                            if calculateMedians[nCols]:
+                                medianCollector.addMeasurement(siteName, strDate, columnHeaders[nCols], measurementValue)
                     else:
                         xlrdLog.write('%s: Unknown value type for [%s,%s] : %s\n' % (rawDataFile, rowIndex, columnIndex, cellType))
                     if (nCols < nColsToWrite):
-                        outputCSV.write(',')        # append , except after last column value
+                        outputCSV.write(',')        # append , except after last column value                    
                         
-            # After emitting all columns, terminate the line
+            # After emitting all columns, terminate the line in the CSV file
             outputCSV.write('\n')       # Terminate line
     else:
         print('Wrong # of sheets or first row of 2nd worksheet is not Date.. skipping')
