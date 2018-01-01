@@ -14,7 +14,7 @@ import ctypes
 import datetime
 from dateutil.parser import parse
 import getopt
-from heapq import *
+import heapq
 import time
 import re
 import platform
@@ -101,25 +101,37 @@ class XlrdLogFileFilter(object):
             self.state = 0
 
 # Class to find median of a string of values
-# from https://discuss.leetcode.com/topic/27521/short-simple-java-c-python-o-log-n-o-1/2
-# It uses two heaps to divide the values as they arrive
+# from https://discuss.leetcode.com/topic/27521/short-simple-java-c-python-o-log-n-o-1/2 and
+# https://discuss.leetcode.com/topic/27689/python-o-lgn-using-two-heapq-data-sturctures
+# It uses two priority heaps to divide the values as they arrive - a priority heap is a
+# balanced binary tree of values.
 #
 class MedianFinder(object):
 
     def __init__(self):
-        self.heaps = [], []
+        self.small = []
+        self.large = []
 
     def addNum(self, num):
-        small, large = self.heaps
-        heappush(small, -heappushpop(large, num))
-        if len(large) < len(small):
-            heappush(large, -heappop(small))
+        if len(self.small) == 0:
+            heapq.heappush(self.small, -num)
+            return
+        if num <= -self.small[0]:
+            # push to small part
+            heapq.heappush(self.small, -num)
+        else:
+            # push to large part
+            heapq.heappush(self.large, num)
+        # adjust small and large balance
+        if len(self.small) - len(self.large) == 2:
+            heapq.heappush(self.large, -heapq.heappop(self.small))
+        elif len(self.small) - len(self.large) == -2:
+            heapq.heappush(self.small, -heapq.heappop(self.large))
 
-    def findMedian(self):
-        small, large = self.heaps
-        if len(large) > len(small):
-            return float(large[0])
-        return (large[0] - small[0]) / 2.0
+    def findMedian(self):  
+        if len(self.small) == len(self.large):
+            return (self.large[0] - self.small[0])/2.0
+        return -float(self.small[0]) if len(self.small) > len(self.large) else float(self.large[0])
 
 # A list of values for a particular site/item by date
 # Designed to be put in a list indexed by site and item.
