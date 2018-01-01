@@ -12,6 +12,7 @@ import sys
 import glob
 import ctypes
 import datetime
+from dateutil.parser import parse
 import getopt
 from heapq import *
 import time
@@ -133,13 +134,30 @@ class SiteItemMeasurements(object):
         self.medianFinders = {}
     
     def recordValue(self, dt, val):
+        global verbose
         if dt not in self.medianFinders:      # first time we are seeing this date
             # A MedianFinder is an accumulator for a particular measurement on a
             # particular date - each value is recorded in the MedianFinder as it
             # is seen, and at the end we can ask the MedianFinder to find the median
             # of all values recorded along the way.
+            
+            # Special case - if we have a date one day on either side, consider them
+            # equivalent and just normalize to whichever one we see first, i.e.
+            # 6/29/15, 6/30/15 and 7/1/15 will all be considered the same and recorded
+            # under one of those dates, whichever is the first one we encounter in the
+            # data stream
+            dtPrevious = parse(dt) + datetime.timedelta(days=-1)
+            strDatePrevious = '%4d-%02d-%02d' % (dtPrevious.year, dtPrevious.month, dtPrevious.day)
+            dtNext = parse(dt) + datetime.timedelta(days=1)
+            strDateNext = '%4d-%02d-%02d' % (dtNext.year, dtNext.month, dtNext.day)
+            if strDatePrevious in self.medianFinders:
+                dt = strDatePrevious
+            elif strDateNext in self.medianFinders:
+                dt = strDateNext
             self.medianFinders[dt] = MedianFinder()
         self.medianFinders[dt].addNum(val)
+        if verbose:
+            print('recordValue: recorded %f for %s' % (val, dt))
     
     # Calculate the medians for each date by enumerating the
     # dates for which values have been recorded and using the
@@ -160,6 +178,9 @@ class MedianCollector(object):
     siteMeasurementValues = {}
     
     def addMeasurement(self, site, dt, item, val):
+        global verbose
+        if verbose:
+            print('Recording %s as %f' % (item, val))
         if site not in self.siteMeasurementValues:      # first time we are seeing this site
             self.siteMeasurementValues[site] = {}
         if item not in self.siteMeasurementValues[site]:    # first time for this measurement
@@ -172,7 +193,7 @@ class MedianCollector(object):
         for site, siteCollection in self.siteMeasurementValues.items():
             for item, itemCollection in siteCollection.items():
                 for dt, medianValue in itemCollection.calcMedians().items():
-                    outputCSVFile.write('%s,"%s",%s,%d\n' % (site, item, dt, medianValue))
+                    outputCSVFile.write('%s,"%s",%s,%f\n' % (site, item, dt, medianValue))
     
 # Process the log files found
 def processLogFiles(logFiles):
@@ -202,8 +223,8 @@ def processLogFiles(logFiles):
     finally:
         xlrdLogFileHandle.close()
         
-    # Emit the median values for each measurement
-    outputCSV.write('\n\nMEDIAN VALUES\nSite,Date,Measurement,Median\n')
+    # Emit the median values for each measurement to the CSV
+    outputCSV.write('\n\nMEDIAN VALUES\nSite,Measurement,Date,Median\n')
     medianCollector.emitMedianValuesCSV(outputCSV)
 
     return ret
@@ -298,7 +319,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                 # Transpose columns if needed - column indices are in the
                 # source sheet - they will be pulled from those source columns
                 # and then written to columns 2, 3, 4 etc. - since 0 is the site name
-                # and 1 is the file name.  -1 means blank column
+                # and 1 is the file name.  -1 means blank column (skip)
             colOrder = [0, 1, 2, 3, -1, 7, 4, 5, 6, 8]
             print("This sheet has non-standard column ordering; adjusting columns to match standard.\n")
         elif numColumns > 4 and sheet.cell(0, 4).ctype == 1 and sheet.cell(0, 4).value == 'mV[pH]':
@@ -381,8 +402,8 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                                 measurementValue = 0
                             else:
                                 measurementValue = cellValue.value
-                            if calculateMedians[nCols]:
-                                medianCollector.addMeasurement(siteName, strDate, columnHeaders[nCols], measurementValue)
+                            if calculateMedians[columnIndex]:
+                                medianCollector.addMeasurement(siteName, strDate, columnHeaders[columnIndex], measurementValue)
                     else:
                         xlrdLog.write('%s: Unknown value type for [%s,%s] : %s\n' % (rawDataFile, rowIndex, columnIndex, cellType))
                     if (nCols < nColsToWrite):
