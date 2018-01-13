@@ -71,6 +71,14 @@ calculateMedians = [ False, False, True,      True, True,       True,        Tru
 # List of measurements to include in the DoE Summary CSV
 includeInDoESummary = [ 'Temp.[C]', 'pH', 'D.O.[%]', 'Turb.FNU' ]
 
+# List of units and methods - each measurment has a list that [0] is the Unit value and [1] is the method value
+unitsAndMethods = { 'Temp.[C]' : ['unit', 'method'],
+                    'pH' : ['unit', 'method'],
+                    'D.O.[%]' : ['unit', 'method'],
+                    'Turb.FNU' : ['unit', 'method']
+}
+
+
 # Headers for the DoE Output file - this is the format of each line.
 outputCSVDoEHeaders = [
     'Study_ID',
@@ -323,16 +331,14 @@ def processLogFiles(logFiles):
         
     # Emit the median values for each measurement to the CSV
     outputCSVSummary.write('\n\nMEDIAN VALUES\nSite,Measurement,Date,Median\n')
-    medianCollector.emitMedianValuesCSV(outputCSVSummary)
+    medianCollector.emitMedianValuesCSV(outputCSVSummary,False)
     
     # Write the DoE summary CSV
-    outputCSVDoE.write(outputCSVDoEHeaders)
+    for colName in outputCSVDoEHeaders:
+        outputCSVDoE.write(colName+',')
+    outputCSVDoE.write('\n')
     
-    # The DoE summary has a row for each site/date/measurement combination - but only
-    # for some measurements
-    for measurementName in includeInDoESummary:
-        #
-    
+    medianCollector.emitMedianValuesCSV(outputCSVDoE,True)
 
     return ret
 
@@ -585,6 +591,10 @@ def main(argv):
     if inputFolder == '':
         helpMesssage()
 
+    if verbose:
+        print('Output Folder: ',outputFolder)
+        print('Input Folder:', inputFolder)
+        
     # We emit two output files - Summary  which is an aggregated summary of all the data files
     # we read, and DoESummary which is for input to the DoE site in a format they prescribe.
     outputSummaryPath = os.path.join(outputFolder, 'StreamData.CSV')
@@ -594,9 +604,9 @@ def main(argv):
         print('Error opening '+outputSummaryPath,': '+ str(e))
         exit(-1)
 
-    outputDoESummaryPath = os.path.join(outputFolder, 'D.CSV')
+    outputDoESummaryPath = os.path.join(outputFolder, 'DoEImportData.CSV')
     try:
-        outputCSVSummary = open(outputDoESummaryPath, 'w')
+        outputCSVDoE = open(outputDoESummaryPath, 'w')
     except IOError as e:
         print('Error opening '+outputDoESummaryPath,': '+ str(e))
         exit(-1)

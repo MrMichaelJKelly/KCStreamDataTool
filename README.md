@@ -30,7 +30,7 @@ Eventually, I think I will need each parameter for each site to be in its own EI
 
 # Pre-requisites
 Install Python 3 from https://www.python.org/downloads/ (make sure you get Python 3.x not 2.x)
-Once installed, install the two packages this solution depends on (includined in this repo):
+Once installed, install the two packages this solution depends on (included in this repo):
 
 Make sure this both are installed for Python 3 on your machine:
     
