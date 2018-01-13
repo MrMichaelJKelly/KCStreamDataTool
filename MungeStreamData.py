@@ -3,8 +3,17 @@
 # Script to read a bunch of data files with measurements from
 # streams and consolidate them, standardize format, eliminate
 # duplicate data readings, etc.
+# Two CSV files are output:
+# 1 has median values and measurement data rows aggregated across all input files
+# The other is in a format for Washington Department of Ecology and matches this template:
+# Sample CSV output
+# Yellowhawk,<Site>,<Site>,Measurement,NGO,<Start Date (MM/DD/YYYY),Time (HH:MM:SS,24),,,,,,,,,,,,,,,,Water (col 24),Fresh/Surface Water,,,,,,,,,<parameter>,,,,,<median>,<unit>,,,,,,,,,,,<method>
 #
-# Mike Kelly - December 2017
+# Time is earliest start time for that date
+# <method> Evan has to research
+# <unit> is a mapping based on parameter (e.g. Percent)
+#
+# Mike Kelly - December 2017 - January 2018
 
 import os
 from collections import namedtuple
@@ -48,8 +57,9 @@ SiteData = namedtuple('SiteMetadata', 'filePath, minDate, maxDate, numRecs')
 
 verbose = False
 
-# handle to output CSV file
-outputCSV = None
+# handle to output CSV files
+outputCSVSummary = None                 # Data summary by site, medians
+outputCSVDoE = None                     # Output for DoE
 
 # Standard data headers - some are in a slightly different format and have to be massaged a bit...
 columnHeaders = [ 'Date', 'Time', 'Temp.[C]', 'pH', 'mV [pH]', 'EC[uS/cm]', 'D.O.[%]', 'D.O.[ppm]', 'Turb.FNU', 'Remarks', 'Other' ]
@@ -58,8 +68,74 @@ columnHeaders = [ 'Date', 'Time', 'Temp.[C]', 'pH', 'mV [pH]', 'EC[uS/cm]', 'D.O
 # The medians are calculated per site/per date.
 calculateMedians = [ False, False, True,      True, True,       True,        True,      True,        True,       False,      False ]
 
+# List of measurements to include in the DoE Summary CSV
+includeInDoESummary = [ 'Temp.[C]', 'pH', 'D.O.[%]', 'Turb.FNU' ]
 
-# Locate files to process
+# Headers for the DoE Output file - this is the format of each line.
+outputCSVDoEHeaders = [
+    'Study_ID',
+    'Location_ID',
+    'Study_Specific_Location_ID',
+    'Field_Collection_Type',
+    'Field_Collector',
+    'Field_Collection_Start_Date',
+    'Field_Collection_Start_Time',
+    'Field_Collection_End_Date',
+    'Field_Collection_End_Time',
+    'Field_Collection_Comment',
+    'Field_Collection_Area',
+    'Field_Collection_Area_Units',
+    'Field_Collection_Reference_Point',
+    'Field_Collection_Upper_Depth',
+    'Field_Collection_Lower_Depth',
+    'Field_Collection_Depth_Units',
+    'Well_Water_Level_Measuring_Point_or_TOC_ID',
+    'Sample_ID',
+    'Sample_Field_Replicate_ID',
+    'Sample_Replicate_Flag',
+    'Sample_Sub_ID',
+    'Sample_Composite_Flag',
+    'Storm_Event_Qualifier',
+    'Sample_Matrix',
+    'Sample_Source',
+    'Sample_Use',
+    'Sample_Collection_Method',
+    'Sample_Preparation_Method',
+    'Sample_Method_Other',
+    'Sample_Taxon_Name',
+    'Sample_Taxon_TSN',
+    'Sample_Tissue_Type',
+    'Sample_Percent_Sorted',
+    'Result_Parameter_Name',
+    'Result_Parameter_CAS_Number',
+    'Lab_Analysis_Date',
+    'Lab_Analysis_Date_Accuracy',
+    'Lab_Analysis_Time',
+    'Result_Value',
+    'Result_Value_Units',
+    'Result_Reporting_Limit',
+    'Result_Reporting_Limit_Type',
+    'Result_Detection_Limit',
+    'Result_Detection_Limit_Type',
+    'Result_Data_Qualifier',
+    'Fraction_Analyzed',
+    'Field_Filtered_Flag',
+    'Result_Basis',
+    'Digestion_Method',
+    'Water_Level_Accuracy',
+    'Result_Method',
+    'Result_Comment',
+    'Result_Additional_Comment',
+    'Result_Lab_Replicate_ID',
+    'Result_Lab_Name',
+    'Result_Validation_Level',
+    'Result_Taxon_Name',
+    'Result_Taxon_TSN',
+    'Result_Taxon_Unidentified_Species',
+    'Result_Taxon_Life_Stage'
+]
+
+# Locate individual site data files to process - this tool aggregates these
 def collectFiles(inputFolder, outputFolder):
     filesToRead = []
     # Regular expression to identify files we are interested in processing
@@ -201,14 +277,24 @@ class MedianCollector(object):
         # Now record the value for this item on this date at this site
         self.siteMeasurementValues[site][item].recordValue(dt, val)
 
-    def emitMedianValuesCSV(self, outputCSVFile):
+    def emitMedianValuesCSV(self, outputCSVSummaryFile,isForDoE):
         for site, siteCollection in self.siteMeasurementValues.items():
             for item, itemCollection in siteCollection.items():
                 for dt, medianValue in itemCollection.calcMedians().items():
-                    outputCSVFile.write('%s,"%s",%s,%f\n' % (site, item, dt, medianValue))
+                    if not isForDoE:
+                        outputCSVSummaryFile.write('%s,"%s",%s,%f\n' % (site, item, dt, medianValue))
+                    else:
+                        # DoE Summary is only for certain measurements and has a completely different format
+                        if item in includeInDoESummary:
+                            # Yellowhawk,<Site>,<Site>,Measurement,NGO,<Start Date (MM/DD/YYYY),Time (HH:MM:SS,24),,,,,,,,,,,,,,,,Water (col 24),Fresh/Surface Water,,,,,,,,,<parameter>,,,,,<median>,<unit>,,,,,,,,,,,<method>
+                            outputCSVSummaryFile.write('Yellowhawk,"%s","%s",Measurement,NGO,"%s",Time (HH:MM:SS,24),,,,,,,,,,,,,,,,"Water","Fresh/Surface Water",,,,,,,,,"%s",,,,,%f,<unit>,,,,,,,,,,,<method>\n' % (site, site,dt,item,medianValue))
     
 # Process the log files found
 def processLogFiles(logFiles):
+    
+    global ouptutCSVSummary
+    global outputCSVDoE
+    
     ret = True      # optimistic
     
     xlrdLogFileHandle = open("xlrd_log_file.txt", "w+")
@@ -219,10 +305,10 @@ def processLogFiles(logFiles):
         xlrdLogFile = XlrdLogFileFilter(xlrdLogFileHandle, skip_these)
         
         # Write the CSV header row
-        outputCSV.write('Site, RawDataFile,')
+        outputCSVSummary.write('Site, RawDataFile,')
         for colName in columnHeaders:
-            outputCSV.write(colName+',')
-        outputCSV.write('\n')
+            outputCSVSummary.write(colName+',')
+        outputCSVSummary.write('\n')
 
         medianCollector = MedianCollector()       
         
@@ -236,8 +322,17 @@ def processLogFiles(logFiles):
         xlrdLogFileHandle.close()
         
     # Emit the median values for each measurement to the CSV
-    outputCSV.write('\n\nMEDIAN VALUES\nSite,Measurement,Date,Median\n')
-    medianCollector.emitMedianValuesCSV(outputCSV)
+    outputCSVSummary.write('\n\nMEDIAN VALUES\nSite,Measurement,Date,Median\n')
+    medianCollector.emitMedianValuesCSV(outputCSVSummary)
+    
+    # Write the DoE summary CSV
+    outputCSVDoE.write(outputCSVDoEHeaders)
+    
+    # The DoE summary has a row for each site/date/measurement combination - but only
+    # for some measurements
+    for measurementName in includeInDoESummary:
+        #
+    
 
     return ret
 
@@ -247,7 +342,7 @@ def processLogFiles(logFiles):
  
 def processLogFile(rawDataFile, xlrdLog, medianCollector):
     
-    global sites, outputCSV
+    global sites, outputCSVSummary
     nRows = 0           # Number rows written to output
     earliestDateSeen = datetime.date.max        # set to HIGHEST date so the first one we encounter is less
     latestDateSeen = datetime.date.min
@@ -311,7 +406,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
     # first cell in 2nd sheet has Date in the name
     if sheet.cell_value(rowx=0,colx=0) == u'Date' and book.nsheets == 2:
         # Print header row
-        # [outputCSV.write(sheet.cell(0,x).value+',') if x < numColumns-1 else outputCSV.write(sheet.cell(0,x).value+'\n') for x in range(0, numColumns)]
+        # [outputCSVSummary.write(sheet.cell(0,x).value+',') if x < numColumns-1 else outputCSVSummary.write(sheet.cell(0,x).value+'\n') for x in range(0, numColumns)]
         # Check to see if we have one of those books where the data doesn't match - in that case we have to do
         # some magic transposing
         # Three variations:
@@ -372,7 +467,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                 if columnIndex >= numColumns:
                     continue            # don't access columns that don't exist on this sheet
                 elif columnIndex == -1:     # emit a blank column - this isn't in source sheet
-                    outputCSV.write(',')
+                    outputCSVSummary.write(',')
                     continue
                 else:
                     cellValue = sheet.cell(rowIndex, columnIndex)  # Get cell object by row, col
@@ -381,7 +476,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                     # Prefix each row with the site name of the data and the
                     # file name it came from
                     if (columnIndex == 0):
-                        outputCSV.write(siteName+','+rawDataFile+',')
+                        outputCSVSummary.write(siteName+','+rawDataFile+',')
                         
                     if verbose:
                         print ('Column: [%s] is [%s] : [%s]' % (columnIndex, cellType, cellValue))
@@ -394,7 +489,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                             # Date
                             year, month, day, hour, minute, second = xldate.xldate_as_tuple(cellValue.value, book.datemode)
                             strDate = '%4d-%02d-%02d' % (year, month, day)
-                            outputCSV.write(strDate)
+                            outputCSVSummary.write(strDate)
                             d = datetime.date(year,month,day)
                             if (d < earliestDateSeen):
                                 earliestDateSeen = d
@@ -402,11 +497,11 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                                 latestDateSeen = d
                         else:  # Only other date value in input is the Time stamp
                             # Just emit time as is.
-                            outputCSV.write(str(cellValue.value))
+                            outputCSVSummary.write(str(cellValue.value))
                         
                     elif (cellType in [1, 2]):   # 1 = text, 2 = number
                             # Other column - e.g. ph, Turb.FNU, etc.
-                            outputCSV.write(str(cellValue.value))
+                            outputCSVSummary.write(str(cellValue.value))
                             # Do we need to accumulate values for this for median calculation?
                             # Note some measurements have '-----' instead of 0 for missing values
                             # so catch that here by checking only for numeric values
@@ -419,10 +514,10 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                     else:
                         xlrdLog.write('%s: Unknown value type for [%s,%s] : %s\n' % (rawDataFile, rowIndex, columnIndex, cellType))
                     if (nCols < nColsToWrite):
-                        outputCSV.write(',')        # append , except after last column value                    
+                        outputCSVSummary.write(',')        # append , except after last column value                    
                         
             # After emitting all columns, terminate the line in the CSV file
-            outputCSV.write('\n')       # Terminate line
+            outputCSVSummary.write('\n')       # Terminate line
     else:
         print('Wrong # of sheets or first row of 2nd worksheet is not Date.. skipping')
         ret = False
@@ -465,9 +560,11 @@ def main(argv):
 
    # Default output folder
     global verbose
-    global outputCSV
+    global outputCSVSummary
+    global outputCSVDoE
     global sites
    
+    # Defaults
     outputFolder = 'ProcessedStreamData'
     inputFolder = '.'
 
@@ -488,15 +585,24 @@ def main(argv):
     if inputFolder == '':
         helpMesssage()
 
-    outputPath = os.path.join(outputFolder, 'StreamData.CSV')
+    # We emit two output files - Summary  which is an aggregated summary of all the data files
+    # we read, and DoESummary which is for input to the DoE site in a format they prescribe.
+    outputSummaryPath = os.path.join(outputFolder, 'StreamData.CSV')
     try:
-        outputCSV = open(outputPath, 'w')
+        outputCSVSummary = open(outputSummaryPath, 'w')
     except IOError as e:
-        print('Error opening '+outputPath,': '+ str(e))
+        print('Error opening '+outputSummaryPath,': '+ str(e))
+        exit(-1)
+
+    outputDoESummaryPath = os.path.join(outputFolder, 'D.CSV')
+    try:
+        outputCSVSummary = open(outputDoESummaryPath, 'w')
+    except IOError as e:
+        print('Error opening '+outputDoESummaryPath,': '+ str(e))
         exit(-1)
     
     print('Processing LOG file data in "'+ inputFolder+ '"...')
-    print('Writing to "'+ outputPath+ '"...')
+    print('Writing to\n"'+ outputSummaryPath+ '"\n"' + outputDoESummaryPath+ '"\n')
    
     files = collectFiles(inputFolder, outputFolder)
     processLogFiles(files)

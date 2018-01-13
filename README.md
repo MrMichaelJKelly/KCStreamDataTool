@@ -29,12 +29,22 @@ _OPEN ISSUE:_ From there, I will prepare the EIM files?
 Eventually, I think I will need each parameter for each site to be in its own EIM-formatted CSV which we can then upload to DOE
 
 # Pre-requisites
-The XlRD package to read the Excel files.  Make sure this is installed for Python 3 on your machine:
+Install Python 3 from https://www.python.org/downloads/ (make sure you get Python 3.x not 2.x)
+Once installed, install the two packages this solution depends on (includined in this repo):
 
-    J:\Dropbox (Personal)\src\KCStreamDataTool>py -V
-    Python 3.6.3
-    J:\Dropbox (Personal)\src\KCStreamDataTool>py -m pip install xlrd-1.1.0-py2.py3-none-any.whl
-    Processing j:\dropbox (personal)\src\kcstreamdatatool\xlrd-1.1.0-py2.py3-none-any.whl
-    Installing collected packages: xlrd
-    Successfully installed xlrd-1.1.0
-
+Make sure this both are installed for Python 3 on your machine:
+    
+	C:\Users\mikek\Dropbox (Personal)\src\KCStreamDataTool>py -V
+	Python 3.6.4
+	
+	C:\Users\mikek\Dropbox (Personal)\src\KCStreamDataTool>py -m pip install xlrd-1.1.0-py2.py3-none-any.whl
+	Processing c:\users\mikek\dropbox (personal)\src\kcstreamdatatool\xlrd-1.1.0-py2.py3-none-any.whl
+	Installing collected packages: xlrd
+	Successfully installed xlrd-1.1.0
+	
+	C:\Users\mikek\Dropbox (Personal)\src\KCStreamDataTool>py -m pip install python_dateutil-2.6.1-py2.py3-none-any.whl
+	Processing c:\users\mikek\dropbox (personal)\src\kcstreamdatatool\python_dateutil-2.6.1-py2.py3-none-any.whl
+	Collecting six>=1.5 (from python-dateutil==2.6.1)
+	  Downloading six-1.11.0-py2.py3-none-any.whl
+	Installing collected packages: six, python-dateutil
+	Successfully installed python-dateutil-2.6.1 six-1.11.0
