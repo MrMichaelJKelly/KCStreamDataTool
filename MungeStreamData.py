@@ -21,6 +21,7 @@ import platform
 from pathlib import Path
 from xlrd import open_workbook, XLRDError, xldate
 import xlrd
+import csv
 
 #import xlrd
 #book = xlrd.open_workbook("myfile.xls")
@@ -240,13 +241,12 @@ def processTemperatureFiles(temperatureFiles, logFile):
     
     try:    
         # Write the CSV header row
-        outputCSV.write('Site, RawDataFile,"Date Time, GMT-07:00","DO conc, mg/L","Temp, DegF"\n')
+        outputCSV.write('Site, "Date Time, GMT-07:00","DO conc, mg/L","Temp, DegF", "RawDataFile"\n')
        
         # Process each data (temperature) file
         for file in temperatureFiles:
             logFile.write("=== %s ===\n" % file)
             if not processTemperatureFile(file, logFile):
-                logFile.write('Error processing %s\n' % file)
                 ret = False
     finally:
         logFile.close()
@@ -263,37 +263,48 @@ def processTemperatureFile(rawDataFile, logFile):
     
     print('processTemperatureFile: Processing '+rawDataFile)
     try:
-        open(rawDataFile, newline='') as csvfile:
+        with open(rawDataFile) as csvfile:
             datarows = csv.reader(csvfile)
             for row in datarows:
                 if nRows == 0:      # Site name - after "Plot Name: " on first row.  Sigh.
                                     # Too bad whoever did this had no $*#*$*$ idea what a
                                     # well-formed CSV file is supposed to look like.
-                    siteName = row[0][11:]
+                    siteName = row[0][16:]
                     print ('Site name in data file: '+siteName)
                 else:
-                    numColumns = row.count()
-                    if numColumns == 7:
-                        # Determine which flavor of format we've got
-                        if row[2][:2] == "DO":
-                            # Flavor with DO in row
-                            temp = row[3]
-                            do = row[2]
-                        elif row[2][:4] == "Temp":
-                            # Flavor with only temperature
-                            do = ""
-                            temp = row[2]
+                    numColumns = len(row)
+                    if numColumns >= 7:
+                        # Determine which flavor of format we've got based on CSV header
+                        if nRows == 1:
+                            if row[2][:2] == "DO":
+                                # Flavor with DO in row
+                                hasDO = True
+                            elif nRows == 1 and row[2][:4] == "Temp":
+                                # Flavor with only temperature
+                                hasDO = False
+                            else:
+                                # Some other format
+                                ret = False
                         else:
-                            # Some other format
-                            ret = False
+                            # Data rows
+                            if hasDO:
+                                # Flavor with DO in row
+                                temp = row[3]
+                                do = row[2]
+                            else:
+                                # Flavor with only temperature
+                                do = ""
+                                temp = row[2]
                     else:
                         # some unexpected format
                         ret = False
+                        
                     if not ret:
-                        print('CSV has non-standard column headers - skipping file')
-                        logFile.write('CSV has non-standard column headers - skipping file\n')
-                    else:
-                        outputCSV.write(sitename, ",", row[1], ",", temp, do, rawDataFile, "\n")
+                        print('CSV has non-standard format - skipping file')
+                        logFile.write('CSV has non-standard format - skipping file\n')
+                    elif nRows > 1:
+                        # Skip first two rows that are headers - emit data for rows 2... n
+                        outputCSV.write('{},{},{},{},{}\n'.format(siteName, row[1], temp, do, rawDataFile))
                         ret = True
                 nRows += 1
                 
@@ -302,11 +313,13 @@ def processTemperatureFile(rawDataFile, logFile):
                     return ret
                 
     except csv.Error as e:
-        print('Error opening workbook: %s\n' % (str(e)))
-        logFile.write('Error opening workbook {} (line {}): {}\n'.format(rawDataFile, reader.line_num, e))
+        print('Error opening CSV file: %s\n' % (str(e)))
+        logFile.write('Error opening CSV file {} (line {}): {}\n'.format(rawDataFile, datarows.line_num, e))
         ret = False
         
-    print('%d data rows read.' % nRows)
+    if ret:
+        print('%d data rows read.' % nRows)
+        logFile.write('%d data rows read.\n' % nRows)
         
     return ret
     
@@ -595,7 +608,8 @@ def main(argv):
         helpMesssage()
         
     if doTemperature:
-        outputPath = os.path.join(outpuFolder, "TemperatureData.CSV")
+        outputPath = os.path.join(outputFolder, "TemperatureData.CSV")
+        logPath = os.path.join(outputFolder, "TemperatureLogFile.txt")
     else:
         outputPath = os.path.join(outputFolder, 'StreamData.CSV')
         
@@ -606,6 +620,11 @@ def main(argv):
         exit(-1)
     
     if doTemperature:
+        try:
+            outputLogFile = open(logPath, 'w')
+        except IOError as e:
+            print('Error opening '+logPath,': '+ str(e))
+            exit(-1)
         print('Processing Temperature file data in "'+ inputFolder+ '"...')
     else:
         print('Processing LOG file data in "'+ inputFolder+ '"...')
@@ -614,7 +633,7 @@ def main(argv):
    
     files = collectFiles(inputFolder, outputFolder, doTemperature)
     if doTemperature:
-        processTemperatureFiles(files)
+        processTemperatureFiles(files, outputLogFile)
     else:
         processLogFiles(files)
 
