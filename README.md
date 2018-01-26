@@ -48,3 +48,21 @@ Make sure this both are installed for Python 3 on your machine:
 	  Downloading six-1.11.0-py2.py3-none-any.whl
 	Installing collected packages: six, python-dateutil
 	Successfully installed python-dateutil-2.6.1 six-1.11.0
+
+# Command line
+
+-i xxxxx    Input - read files in xxxxx directory and below (for temperature data, it is looking for .CSV files
+			in this directory - for Log file data, it is looking for .xls files in this directory and below.
+			NOTE: *xls* files, not *xlsx* files.
+
+-o xxxxx	Put output data in directory xxxx.  This is where the summary CSV will be created.
+
+-t			Summarize temperature data.  Default is to summarize Logger data, so if -t isn't supplied, the tool
+			will look for .xls files from loggers and summarize those.  -t changes it to look for .CSV files
+			containing temperature data and summarize those.
+
+-v			Verbose.  For debugging, print a lot of info about what the tool is doing
+
+-h			Help - print an explanation of these command line options
+
+
