@@ -270,6 +270,9 @@ def processTemperatureFile(rawDataFile, logFile):
                                     # Too bad whoever did this had no $*#*$*$ idea what a
                                     # well-formed CSV file is supposed to look like.
                     siteName = row[0][16:]
+                    # Some of the CSV files have a trailing " - remove it
+                    if siteName[-1] == '"':
+                        siteName = siteName[:-1]
                     print ('Site name in data file: '+siteName)
                 else:
                     numColumns = len(row)
