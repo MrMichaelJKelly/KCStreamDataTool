@@ -241,7 +241,7 @@ def processTemperatureFiles(temperatureFiles, logFile):
     
     try:    
         # Write the CSV header row
-        outputCSV.write('Site, "Date Time, GMT-07:00","DO conc, mg/L","Temp, DegF", "RawDataFile"\n')
+        outputCSV.write('"Site","Date Time (GMT-07:00)","DO conc (mg/L)","Temp (DegF)","RawDataFile"\n')
        
         # Process each data (temperature) file
         for file in temperatureFiles:
