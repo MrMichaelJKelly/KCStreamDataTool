@@ -3,17 +3,8 @@
 # Script to read a bunch of data files with measurements from
 # streams and consolidate them, standardize format, eliminate
 # duplicate data readings, etc.
-# Two CSV files are output:
-# 1 has median values and measurement data rows aggregated across all input files
-# The other is in a format for Washington Department of Ecology and matches this template:
-# Sample CSV output
-# Yellowhawk,<Site>,<Site>,Measurement,NGO,<Start Date (MM/DD/YYYY),Time (HH:MM:SS,24),,,,,,,,,,,,,,,,Water (col 24),Fresh/Surface Water,,,,,,,,,<parameter>,,,,,<median>,<unit>,,,,,,,,,,,<method>
 #
-# Time is earliest start time for that date
-# <method> Evan has to research
-# <unit> is a mapping based on parameter (e.g. Percent)
-#
-# Mike Kelly - December 2017 - January 2018
+# Mike Kelly - December 2017
 
 import os
 from collections import namedtuple
@@ -57,9 +48,8 @@ SiteData = namedtuple('SiteMetadata', 'filePath, minDate, maxDate, numRecs')
 
 verbose = False
 
-# handle to output CSV files
-outputCSVSummary = None                 # Data summary by site, medians
-outputCSVDoE = None                     # Output for DoE
+# handle to output CSV file
+outputCSV = None
 
 # Standard data headers - some are in a slightly different format and have to be massaged a bit...
 columnHeaders = [ 'Date', 'Time', 'Temp.[C]', 'pH', 'mV [pH]', 'EC[uS/cm]', 'D.O.[%]', 'D.O.[ppm]', 'Turb.FNU', 'Remarks', 'Other' ]
@@ -68,86 +58,18 @@ columnHeaders = [ 'Date', 'Time', 'Temp.[C]', 'pH', 'mV [pH]', 'EC[uS/cm]', 'D.O
 # The medians are calculated per site/per date.
 calculateMedians = [ False, False, True,      True, True,       True,        True,      True,        True,       False,      False ]
 
-# List of measurements to include in the DoE Summary CSV
-includeInDoESummary = [ 'Temp.[C]', 'pH', 'D.O.[%]', 'Turb.FNU' ]
 
-# List of units and methods - each measurment has a list that [0] is the Unit value and [1] is the method value
-unitsAndMethods = { 'Temp.[C]' : ['unit', 'method'],
-                    'pH' : ['unit', 'method'],
-                    'D.O.[%]' : ['unit', 'method'],
-                    'Turb.FNU' : ['unit', 'method']
-}
-
-
-# Headers for the DoE Output file - this is the format of each line.
-outputCSVDoEHeaders = [
-    'Study_ID',
-    'Location_ID',
-    'Study_Specific_Location_ID',
-    'Field_Collection_Type',
-    'Field_Collector',
-    'Field_Collection_Start_Date',
-    'Field_Collection_Start_Time',
-    'Field_Collection_End_Date',
-    'Field_Collection_End_Time',
-    'Field_Collection_Comment',
-    'Field_Collection_Area',
-    'Field_Collection_Area_Units',
-    'Field_Collection_Reference_Point',
-    'Field_Collection_Upper_Depth',
-    'Field_Collection_Lower_Depth',
-    'Field_Collection_Depth_Units',
-    'Well_Water_Level_Measuring_Point_or_TOC_ID',
-    'Sample_ID',
-    'Sample_Field_Replicate_ID',
-    'Sample_Replicate_Flag',
-    'Sample_Sub_ID',
-    'Sample_Composite_Flag',
-    'Storm_Event_Qualifier',
-    'Sample_Matrix',
-    'Sample_Source',
-    'Sample_Use',
-    'Sample_Collection_Method',
-    'Sample_Preparation_Method',
-    'Sample_Method_Other',
-    'Sample_Taxon_Name',
-    'Sample_Taxon_TSN',
-    'Sample_Tissue_Type',
-    'Sample_Percent_Sorted',
-    'Result_Parameter_Name',
-    'Result_Parameter_CAS_Number',
-    'Lab_Analysis_Date',
-    'Lab_Analysis_Date_Accuracy',
-    'Lab_Analysis_Time',
-    'Result_Value',
-    'Result_Value_Units',
-    'Result_Reporting_Limit',
-    'Result_Reporting_Limit_Type',
-    'Result_Detection_Limit',
-    'Result_Detection_Limit_Type',
-    'Result_Data_Qualifier',
-    'Fraction_Analyzed',
-    'Field_Filtered_Flag',
-    'Result_Basis',
-    'Digestion_Method',
-    'Water_Level_Accuracy',
-    'Result_Method',
-    'Result_Comment',
-    'Result_Additional_Comment',
-    'Result_Lab_Replicate_ID',
-    'Result_Lab_Name',
-    'Result_Validation_Level',
-    'Result_Taxon_Name',
-    'Result_Taxon_TSN',
-    'Result_Taxon_Unidentified_Species',
-    'Result_Taxon_Life_Stage'
-]
-
-# Locate individual site data files to process - this tool aggregates these
-def collectFiles(inputFolder, outputFolder):
+# Locate files to process - if doTemperature is True, doing temperature
+# files - otherwise LOG files
+def collectFiles(inputFolder, outputFolder, doTemp):
     filesToRead = []
-    # Regular expression to identify files we are interested in processing
-    logFilePattern = re.compile('.*\.xls$')
+    # Regular expression to identify files we are interested in processing - for
+    # Temperature data, it is CSV's; for log files, it is .XLS files
+    if doTemp:
+        logFilePattern = re.compile('.*\.csv$')
+    else:
+        logFilePattern = re.compile('.*\.xls$')
+        
     for subdir, dirs, files in os.walk(inputFolder):
         for file in files:
             if file not in filesToExclude:
@@ -285,24 +207,111 @@ class MedianCollector(object):
         # Now record the value for this item on this date at this site
         self.siteMeasurementValues[site][item].recordValue(dt, val)
 
-    def emitMedianValuesCSV(self, outputCSVSummaryFile,isForDoE):
+    def emitMedianValuesCSV(self, outputCSVFile):
         for site, siteCollection in self.siteMeasurementValues.items():
             for item, itemCollection in siteCollection.items():
                 for dt, medianValue in itemCollection.calcMedians().items():
-                    if not isForDoE:
-                        outputCSVSummaryFile.write('%s,"%s",%s,%f\n' % (site, item, dt, medianValue))
+                    outputCSVFile.write('%s,"%s",%s,%f\n' % (site, item, dt, medianValue))
+
+# Process the Temperature data CSV files found.
+# Input CSV files are in two different formats:
+# The first is for the loggers that only collect temperature, they read 
+#
+#"Plot Title: Caldwell_Mouth"
+#"#","Date Time, GMT-07:00","Temp, ?F (LGR S/N: 10360568, SEN S/N: 10360568)","Coupler Detached (LGR S/N: 10360568)","Coupler Attached (LGR S/N: 10360568)","Stopped (LGR S/N: 10360568)","End Of File (LGR S/N: 10360568)"
+#1,11/03/23 02:30:00 AM,68.828,Logged,,,
+#2,11/03/23 03:00:00 AM,67.413,,,,
+#3,11/03/23 03:30:00 AM,69.300,,,,
+#
+# The second file type is for loggers that collect both temperature and dissolved oxygen, they look like:
+#
+#"Plot Title: Yellowhawk Old Milton Hiway"
+#"#","Date Time, GMT-07:00","DO conc, mg/L (LGR S/N: 11009651, SEN S/N: 11009651)","Temp, ?F (LGR S/N: 11009651, SEN S/N: 11009651)","Coupler Attached (LGR S/N: 11009651)","Stopped (LGR S/N: 11009651)","End Of File (LGR S/N: 11009651)"
+#1,05/21/17 01:31:27 PM,11.11,58.10,,,
+#2,05/21/17 02:31:27 PM,10.89,59.43,,,
+#3,05/21/17 03:31:27 PM,10.61,60.58,,,
+#
+# This routine reads both formats and emits a CSV file with this format:
+#
+# Site,"Date Time, GMT-07:00","DO conc, mg/L","Temp, DegF","Source File"
+#
+def processTemperatureFiles(temperatureFiles, logFile):
+    ret = True      # optimistic
+    
+    try:    
+        # Write the CSV header row
+        outputCSV.write('Site, RawDataFile,"Date Time, GMT-07:00","DO conc, mg/L","Temp, DegF"\n')
+       
+        # Process each data (temperature) file
+        for file in temperatureFiles:
+            logFile.write("=== %s ===\n" % file)
+            if not processTemperatureFile(file, logFile):
+                logFile.write('Error processing %s\n' % file)
+                ret = False
+    finally:
+        logFile.close()
+
+    return ret
+
+
+# Process one raw data temperature file 
+def processTemperatureFile(rawDataFile, logFile):
+    
+    global sites, outputCSV
+    nRows = 0           # Number rows written to output
+    ret = True
+    
+    print('processTemperatureFile: Processing '+rawDataFile)
+    try:
+        open(rawDataFile, newline='') as csvfile:
+            datarows = csv.reader(csvfile)
+            for row in datarows:
+                if nRows == 0:      # Site name - after "Plot Name: " on first row.  Sigh.
+                                    # Too bad whoever did this had no $*#*$*$ idea what a
+                                    # well-formed CSV file is supposed to look like.
+                    siteName = row[0][11:]
+                    print ('Site name in data file: '+siteName)
+                else:
+                    numColumns = row.count()
+                    if numColumns == 7:
+                        # Determine which flavor of format we've got
+                        if row[2][:2] == "DO":
+                            # Flavor with DO in row
+                            temp = row[3]
+                            do = row[2]
+                        elif row[2][:4] == "Temp":
+                            # Flavor with only temperature
+                            do = ""
+                            temp = row[2]
+                        else:
+                            # Some other format
+                            ret = False
                     else:
-                        # DoE Summary is only for certain measurements and has a completely different format
-                        if item in includeInDoESummary:
-                            # Yellowhawk,<Site>,<Site>,Measurement,NGO,<Start Date (MM/DD/YYYY),Time (HH:MM:SS,24),,,,,,,,,,,,,,,,Water (col 24),Fresh/Surface Water,,,,,,,,,<parameter>,,,,,<median>,<unit>,,,,,,,,,,,<method>
-                            outputCSVSummaryFile.write('Yellowhawk,"%s","%s",Measurement,NGO,"%s",Time (HH:MM:SS,24),,,,,,,,,,,,,,,,"Water","Fresh/Surface Water",,,,,,,,,"%s",,,,,%f,<unit>,,,,,,,,,,,<method>\n' % (site, site,dt,item,medianValue))
+                        # some unexpected format
+                        ret = False
+                    if not ret:
+                        print('CSV has non-standard column headers - skipping file')
+                        logFile.write('CSV has non-standard column headers - skipping file\n')
+                    else:
+                        outputCSV.write(sitename, ",", row[1], ",", temp, do, rawDataFile, "\n")
+                        ret = True
+                nRows += 1
+                
+                # If encountered a format error - skip out
+                if not ret:
+                    return ret
+                
+    except csv.Error as e:
+        print('Error opening workbook: %s\n' % (str(e)))
+        logFile.write('Error opening workbook {} (line {}): {}\n'.format(rawDataFile, reader.line_num, e))
+        ret = False
+        
+    print('%d data rows read.' % nRows)
+        
+    return ret
     
 # Process the log files found
 def processLogFiles(logFiles):
-    
-    global ouptutCSVSummary
-    global outputCSVDoE
-    
     ret = True      # optimistic
     
     xlrdLogFileHandle = open("xlrd_log_file.txt", "w+")
@@ -313,10 +322,10 @@ def processLogFiles(logFiles):
         xlrdLogFile = XlrdLogFileFilter(xlrdLogFileHandle, skip_these)
         
         # Write the CSV header row
-        outputCSVSummary.write('Site, RawDataFile,')
+        outputCSV.write('Site, RawDataFile,')
         for colName in columnHeaders:
-            outputCSVSummary.write(colName+',')
-        outputCSVSummary.write('\n')
+            outputCSV.write(colName+',')
+        outputCSV.write('\n')
 
         medianCollector = MedianCollector()       
         
@@ -330,15 +339,8 @@ def processLogFiles(logFiles):
         xlrdLogFileHandle.close()
         
     # Emit the median values for each measurement to the CSV
-    outputCSVSummary.write('\n\nMEDIAN VALUES\nSite,Measurement,Date,Median\n')
-    medianCollector.emitMedianValuesCSV(outputCSVSummary,False)
-    
-    # Write the DoE summary CSV
-    for colName in outputCSVDoEHeaders:
-        outputCSVDoE.write(colName+',')
-    outputCSVDoE.write('\n')
-    
-    medianCollector.emitMedianValuesCSV(outputCSVDoE,True)
+    outputCSV.write('\n\nMEDIAN VALUES\nSite,Measurement,Date,Median\n')
+    medianCollector.emitMedianValuesCSV(outputCSV)
 
     return ret
 
@@ -348,7 +350,7 @@ def processLogFiles(logFiles):
  
 def processLogFile(rawDataFile, xlrdLog, medianCollector):
     
-    global sites, outputCSVSummary
+    global sites, outputCSV
     nRows = 0           # Number rows written to output
     earliestDateSeen = datetime.date.max        # set to HIGHEST date so the first one we encounter is less
     latestDateSeen = datetime.date.min
@@ -412,7 +414,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
     # first cell in 2nd sheet has Date in the name
     if sheet.cell_value(rowx=0,colx=0) == u'Date' and book.nsheets == 2:
         # Print header row
-        # [outputCSVSummary.write(sheet.cell(0,x).value+',') if x < numColumns-1 else outputCSVSummary.write(sheet.cell(0,x).value+'\n') for x in range(0, numColumns)]
+        # [outputCSV.write(sheet.cell(0,x).value+',') if x < numColumns-1 else outputCSV.write(sheet.cell(0,x).value+'\n') for x in range(0, numColumns)]
         # Check to see if we have one of those books where the data doesn't match - in that case we have to do
         # some magic transposing
         # Three variations:
@@ -473,7 +475,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                 if columnIndex >= numColumns:
                     continue            # don't access columns that don't exist on this sheet
                 elif columnIndex == -1:     # emit a blank column - this isn't in source sheet
-                    outputCSVSummary.write(',')
+                    outputCSV.write(',')
                     continue
                 else:
                     cellValue = sheet.cell(rowIndex, columnIndex)  # Get cell object by row, col
@@ -482,7 +484,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                     # Prefix each row with the site name of the data and the
                     # file name it came from
                     if (columnIndex == 0):
-                        outputCSVSummary.write(siteName+','+rawDataFile+',')
+                        outputCSV.write(siteName+','+rawDataFile+',')
                         
                     if verbose:
                         print ('Column: [%s] is [%s] : [%s]' % (columnIndex, cellType, cellValue))
@@ -495,7 +497,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                             # Date
                             year, month, day, hour, minute, second = xldate.xldate_as_tuple(cellValue.value, book.datemode)
                             strDate = '%4d-%02d-%02d' % (year, month, day)
-                            outputCSVSummary.write(strDate)
+                            outputCSV.write(strDate)
                             d = datetime.date(year,month,day)
                             if (d < earliestDateSeen):
                                 earliestDateSeen = d
@@ -503,11 +505,11 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                                 latestDateSeen = d
                         else:  # Only other date value in input is the Time stamp
                             # Just emit time as is.
-                            outputCSVSummary.write(str(cellValue.value))
+                            outputCSV.write(str(cellValue.value))
                         
                     elif (cellType in [1, 2]):   # 1 = text, 2 = number
                             # Other column - e.g. ph, Turb.FNU, etc.
-                            outputCSVSummary.write(str(cellValue.value))
+                            outputCSV.write(str(cellValue.value))
                             # Do we need to accumulate values for this for median calculation?
                             # Note some measurements have '-----' instead of 0 for missing values
                             # so catch that here by checking only for numeric values
@@ -520,10 +522,10 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                     else:
                         xlrdLog.write('%s: Unknown value type for [%s,%s] : %s\n' % (rawDataFile, rowIndex, columnIndex, cellType))
                     if (nCols < nColsToWrite):
-                        outputCSVSummary.write(',')        # append , except after last column value                    
+                        outputCSV.write(',')        # append , except after last column value                    
                         
             # After emitting all columns, terminate the line in the CSV file
-            outputCSVSummary.write('\n')       # Terminate line
+            outputCSV.write('\n')       # Terminate line
     else:
         print('Wrong # of sheets or first row of 2nd worksheet is not Date.. skipping')
         ret = False
@@ -566,16 +568,15 @@ def main(argv):
 
    # Default output folder
     global verbose
-    global outputCSVSummary
-    global outputCSVDoE
+    global outputCSV
     global sites
    
-    # Defaults
     outputFolder = 'ProcessedStreamData'
     inputFolder = '.'
+    doTemperature = False
 
     try:
-        opts, args = getopt.getopt(argv,"vhi:o:",["verbose", "help", "input=", "help", "output="])
+        opts, args = getopt.getopt(argv,"vhi:o:t",["verbose", "help", "input=", "help", "output=", "temp"])
     except getopt.GetoptError:
         helpMessage()
     for opt, arg in opts:
@@ -587,35 +588,36 @@ def main(argv):
             outputFolder = arg
         elif opt in ("-i", "--input"):
             inputFolder = arg
+        elif opt in ("-t", "--temp"):
+            doTemperature = True
 
     if inputFolder == '':
         helpMesssage()
-
-    if verbose:
-        print('Output Folder: ',outputFolder)
-        print('Input Folder:', inputFolder)
         
-    # We emit two output files - Summary  which is an aggregated summary of all the data files
-    # we read, and DoESummary which is for input to the DoE site in a format they prescribe.
-    outputSummaryPath = os.path.join(outputFolder, 'StreamData.CSV')
+    if doTemperature:
+        outputPath = os.path.join(outpuFolder, "TemperatureData.CSV")
+    else:
+        outputPath = os.path.join(outputFolder, 'StreamData.CSV')
+        
     try:
-        outputCSVSummary = open(outputSummaryPath, 'w')
+        outputCSV = open(outputPath, 'w')
     except IOError as e:
-        print('Error opening '+outputSummaryPath,': '+ str(e))
-        exit(-1)
-
-    outputDoESummaryPath = os.path.join(outputFolder, 'DoEImportData.CSV')
-    try:
-        outputCSVDoE = open(outputDoESummaryPath, 'w')
-    except IOError as e:
-        print('Error opening '+outputDoESummaryPath,': '+ str(e))
+        print('Error opening '+outputPath,': '+ str(e))
         exit(-1)
     
-    print('Processing LOG file data in "'+ inputFolder+ '"...')
-    print('Writing to\n"'+ outputSummaryPath+ '"\n"' + outputDoESummaryPath+ '"\n')
+    if doTemperature:
+        print('Processing Temperature file data in "'+ inputFolder+ '"...')
+    else:
+        print('Processing LOG file data in "'+ inputFolder+ '"...')
+        
+    print('Writing to "'+ outputPath+ '"...')
    
-    files = collectFiles(inputFolder, outputFolder)
-    processLogFiles(files)
+    files = collectFiles(inputFolder, outputFolder, doTemperature)
+    if doTemperature:
+        processTemperatureFiles(files)
+    else:
+        processLogFiles(files)
+
     print('Done!')
     
     # Dump out collected per-site data
