@@ -253,6 +253,33 @@ def processTemperatureFiles(temperatureFiles, logFile):
 
     return ret
 
+def mapTemperatureSiteName(siteName):
+    temperatureSiteMap = {
+        'Caldwell_Source' : 'CALDS',
+        'Cottonwood_Plaza_Way' : 'COTPR',
+        'Cottonwood Plaza Way' : 'COTPR',
+        'Garrison___Source' : 'GARRS',
+        'Garrison _ Source' : 'GARRS',
+        'GarrisonMouth_11-5-15_QAQC' : 'GARMO',
+        'Lassiter_Source_Air' : 'LASCB_Air',
+        'Russell_Creek_Plaza_Way' : 'RUSPR',
+        'Rutzer\'s_Spring' : 'RUTZP',
+        'Stone_Mouth_11-5-15_QAQC' : 'STOMO',
+        'Stone_Source' : 'STONS',
+        'Stone_Source_Air' : 'STONS_Air',
+        'Whitney_Spring_Creek_Rutzer_Dr' : 'WHISP',
+        'Whitney_Spring_Creek_Shives_Drive' : 'WHIRU',
+        'Whitney Spring Creek Rutzer Dr' : 'WHISP',
+        'Whitney Spring Creek Shives Drive' : 'WHIRU',
+        'Yellowhawk_mouth_air' : 'YELMO_Air',
+        'Yellowhawk_Old_Milton_Hiway' : 'YELMO',
+        'Yellowhawk_Plaza_Way' : 'YELPR',
+        'Yellowhawk_Rupars' : 'YELRU',
+        'Yellowhawk_Source_11-5-15_QAQC' : 'YELAC'
+    }
+    return temperatureSiteMap.get(siteName.replace(' ','_'), siteName)
+
+
 
 # Process one raw data temperature file 
 def processTemperatureFile(rawDataFile, logFile):
@@ -261,7 +288,7 @@ def processTemperatureFile(rawDataFile, logFile):
     nRows = 0           # Number rows written to output
     ret = True
     
-    print('processTemperatureFile: Processing '+rawDataFile)
+    print('\nProcessing '+rawDataFile)
     try:
         with open(rawDataFile) as csvfile:
             datarows = csv.reader(csvfile)
@@ -273,7 +300,9 @@ def processTemperatureFile(rawDataFile, logFile):
                     # Some of the CSV files have a trailing " - remove it
                     if len(siteName) > 1 and siteName[-1] == '"':
                         siteName = siteName[:-1]
-                    print ('Site name in data file: '+siteName)
+                    newSiteName = mapTemperatureSiteName(siteName)
+                    print ('Site name in data file {} => {}'.format(siteName,newSiteName))
+                    siteName = newSiteName
                 else:
                     numColumns = len(row)
                     if numColumns >= 7:
@@ -569,9 +598,14 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
 
  
 def helpMessage():
-      print('MungeStreamData.py [-o <outputFolder>] -i <inputFolder>')
-      print('Processes all data files under <inputFolder>')
+      print('Usage:')
+      print('MungeStreamData.py [-t] [-h] [-v] [-o <outputFolder>] -i <inputFolder>')
+      print('Processes all data files under <inputFolder>; default is current directory')
       print('Output goes to specified output folder, default is ProcessedStreamData')
+      print('Optional parameters:')
+      print('    -t   - process temperature data files, not logger files.  Without -t, logger files are processed.')
+      print('    -h   - print this help message')
+      print('    -v   - verbose output (for debugging the tool)')
       sys.exit(2)
 
 
@@ -582,15 +616,17 @@ def main(argv):
         print('Sorry, this script is supported only on Windows for now... bug Mike')
         sys.exit(2)
 
-   # Default output folder
     global verbose
     global outputCSV
     global sites
    
+   # Defaults for output folder, input folder and whether we are processing logger or
+   # temperature files
     outputFolder = 'ProcessedStreamData'
     inputFolder = '.'
     doTemperature = False
 
+    # Arguments
     try:
         opts, args = getopt.getopt(argv,"vhi:o:t",["verbose", "help", "input=", "help", "output=", "temp"])
     except getopt.GetoptError:
@@ -607,8 +643,9 @@ def main(argv):
         elif opt in ("-t", "--temp"):
             doTemperature = True
 
-    if inputFolder == '':
-        helpMesssage()
+    if inputFolder == '' or not os.path.isdir(inputFolder):
+        print(inputFolder+' is not a folder containing data files.')
+        helpMessage()
         
     if doTemperature:
         outputPath = os.path.join(outputFolder, "TemperatureData.CSV")
@@ -620,7 +657,7 @@ def main(argv):
         outputCSV = open(outputPath, 'w')
     except IOError as e:
         print('Error opening '+outputPath,': '+ str(e))
-        exit(-1)
+        helpMessage()
     
     if doTemperature:
         try:
@@ -634,7 +671,9 @@ def main(argv):
         
     print('Writing to "'+ outputPath+ '"...')
    
+    # Get list of files to process - either temperature or logger files
     files = collectFiles(inputFolder, outputFolder, doTemperature)
+    
     if doTemperature:
         processTemperatureFiles(files, outputLogFile)
     else:
@@ -643,12 +682,13 @@ def main(argv):
     print('Done!')
     
     # Dump out collected per-site data
-    for site in sites:
-        print('For "' + site +'"')
-        for item in sites[site]:
-            print('\tData from %s to %s' % (str(item.minDate), str(item.maxDate)))
-            print('\t%d records from: %s' % (item.numRecs, item.filePath))
-        print('-'*50)
+    if not doTemperature:
+        for site in sites:
+            print('For "' + site +'"')
+            for item in sites[site]:
+                print('\tData from %s to %s' % (str(item.minDate), str(item.maxDate)))
+                print('\t%d records from: %s' % (item.numRecs, item.filePath))
+            print('-'*50)
    
 
 if __name__ == "__main__":
