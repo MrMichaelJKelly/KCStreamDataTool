@@ -255,6 +255,7 @@ def processTemperatureFiles(temperatureFiles, logFile):
 
 def mapTemperatureSiteName(siteName):
     temperatureSiteMap = {
+        'Caldwell_Mouth' : 'CALDM',
         'Caldwell_Source' : 'CALDS',
         'Cottonwood_Plaza_Way' : 'COTPR',
         'Cottonwood Plaza Way' : 'COTPR',
@@ -275,10 +276,26 @@ def mapTemperatureSiteName(siteName):
         'Yellowhawk_Old_Milton_Hiway' : 'YELMO',
         'Yellowhawk_Plaza_Way' : 'YELPR',
         'Yellowhawk_Rupars' : 'YELRU',
-        'Yellowhawk_Source_11-5-15_QAQC' : 'YELAC'
+        'Yellowhawk_Source_11-5-15_QAQC' : 'YELAC',
+		'Butcher_Mouth' : 'BUTMO',
+		'Butcher_source' : 'BUTSO',
+		'Butcher_Source' : 'BUTSO',
+		'Caldwell_Mouth' : 'CALDM',
+		'Garrison___Mouth' : 'GARMO',
+		'Garrison_Source' : 'GARRS',
+		'Lassiter_Mouth' : 'LASMO',
+		'Lassiter_Spring' : 'LASCB',
+		'Lincoln_mouth' : 'LINMO',
+		'Lincoln_mouth_air' : 'LINMO_Air',
+		'Lincoln_source' : 'LINSO',
+		'Titus_Mouth' : 'TITMO',
+		'Titus_mouth_air' : 'TITMO_Air',
+		'Yellowhawk_@_Rupar_(2)' : 'YELRU',
+		'YellowHawk_@_Rupar_11-5-15_QAQC' : 'YELRU',
+		'Yellowhawk_source' : 'YELAC',
+		'YellowhawkCreekPlazaWy_11-5-15_QAQC' : 'YELPR'        
     }
-    return temperatureSiteMap.get(siteName.replace(' ','_'), siteName)
-
+    return temperatureSiteMap.get(siteName.replace(' ','_'), None)
 
 
 # Process one raw data temperature file 
@@ -296,13 +313,25 @@ def processTemperatureFile(rawDataFile, logFile):
                 if nRows == 0:      # Site name - after "Plot Name: " on first row.  Sigh.
                                     # Too bad whoever did this had no $*#*$*$ idea what a
                                     # well-formed CSV file is supposed to look like.
-                    siteName = row[0][16:]
+                    # Some of the CSV files are in UTF-8 which means they have a Unicode signature
+                    # Just look for the :
+                    siteNamePos = row[0].find(':')
+                    if siteNamePos == -1:
+                        siteName = row[0]   # No :?
+                    else:
+                        siteName = row[0][(siteNamePos+2):].rstrip()
                     # Some of the CSV files have a trailing " - remove it
                     if len(siteName) > 1 and siteName[-1] == '"':
                         siteName = siteName[:-1]
+                    # Use the mapping list to convert sitenames
                     newSiteName = mapTemperatureSiteName(siteName)
                     print ('Site name in data file {} => {}'.format(siteName,newSiteName))
-                    siteName = newSiteName
+                    if newSiteName is None:
+                        print('No mapping for site name, skipping file')
+                        logFile.write('No mapping for site name "{}", skipping file\n'.format(siteName))
+                        ret = False
+                    else:
+                        siteName = newSiteName
                 else:
                     numColumns = len(row)
                     if numColumns >= 7:
