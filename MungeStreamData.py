@@ -70,8 +70,22 @@ columnHeaders = [ 'Date', 'Time', 'Temp.[C]', 'pH', 'mV [pH]', 'EC[uS/cm]', 'D.O
 # The medians are calculated per site/per date.
 calculateMedians = [ False, False, True,      True, True,       True,        True,      True,        True,       False,      False ]
 
-# List of measurements to include in the DoE Summary CSV
-includeInDoESummary = [ 'Temp.[C]', 'pH', 'D.O.[%]', 'Turb.FNU' ]
+# List of measurements to include in the DoE Summary CSV,
+# with value to put in the "Result_Parameter_Name" column for that item
+includeInDoESummary = {
+    'Temp.[C]' : 'Temperature, water',
+    'pH' : 'pH',
+    'D.O.[%]' : 'Dissolved Oxygen Percent Saturation',
+    'Turb.FNU' : 'Turbitity'
+}
+
+# Result_Value_Units values corresponding to items in the DoE summary
+valueUnitsDoESummary = {
+    'Temp.[C]' : 'deg C',
+    'pH' : 'pH',
+    'D.O.[%]' : '%',
+    'Turb.FNU' : 'FNU'
+}
 
 # List of units and methods - each measurment has a list that [0] is the Unit value and [1] is the method value
 unitsAndMethods = { 'Temp.[C]' : ['unit', 'method'],
@@ -303,9 +317,9 @@ class MedianCollector(object):
                         outputCSVSummaryFile.write('%s,"%s",%s,%f\n' % (site, item, dt, medianValue))
                     else:
                         # DoE Summary is only for certain measurements and has a completely different format
-                        if item in includeInDoESummary:
+                        if item in includeInDoESummary.keys():
                             # Yellowhawk,<Site>,<Site>,Measurement,NGO,<Start Date (MM/DD/YYYY),Time (HH:MM:SS,24),,,,,,,,,,,,,,,,Water (col 24),Fresh/Surface Water,,,,,,,,,<parameter>,,,,,<median>,<unit>,,,,,,,,,,,<method>
-                            outputCSVSummaryFile.write('Yellowhawk,"%s","%s",Measurement,NGO,"%s",Time (HH:MM:SS,24),,,,,,,,,,,,,,,,"Water","Fresh/Surface Water",,,,,,,,,"%s",,,,,%f,<unit>,,,,,,,,,,,<method>\n' % (site, site,dt,item,medianValue))
+                            outputCSVSummaryFile.write('Yellowhawk,"%s","%s",Measurement,NGO,"%s",Time (HH:MM:SS,24),,,,,,,,,,,,,,,,"Water","Fresh/Surface Water",,,,,,,,,"%s",,,,,%f,"%s",,,,,,,,,,,<method>\n' % (site, site,dt,includeInDoESummary[item],medianValue,valueUnitsDoESummary[item]))
 
 # Process the Temperature data CSV files found.
 # Input CSV files are in two different formats:
@@ -377,7 +391,7 @@ def mapTemperatureSiteName(siteName):
 		'Caldwell_Mouth' : 'CALDM',
 		'Garrison___Mouth' : 'GARMO',
 		'Garrison_Source' : 'GARRS',
-		'Lassiter_Mouth' : 'LASMO',
+		'Lassiter_Mouth' : 'LASOM',
 		'Lassiter_Spring' : 'LASCB',
 		'Lincoln_mouth' : 'LINMO',
 		'Lincoln_mouth_air' : 'LINMO_Air',
@@ -516,6 +530,7 @@ def processLogFiles(logFiles):
     # Write the DoE summary CSV
     for item in outputCSVDoEHeaders:
         outputCSVDoE.write(item+',')
+    outputCSVDoE.write('\n')    
     medianCollector.emitMedianValuesCSV(outputCSVDoE,True)
 
     return ret
@@ -561,6 +576,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                'WHIRZ' : 'WHISP',
                'RUTZPOND' : 'RUTZP',
                'YELPER' : 'YELPR',
+               'LASMO' : 'LASOM',
                'RUTZEROUT' : 'RUTZP.outflow'
     }
     
@@ -785,7 +801,7 @@ def main(argv):
         # We emit two output files - Summary  which is an aggregated summary of all the data files
         # we read, and DoESummary which is for input to the DoE site in a format they prescribe.
         outputSummaryPath = os.path.join(outputFolder, 'StreamData.CSV')
-        outputDoESummaryPath = os.path.join(outputFolder, 'DoEImportData.CSV')
+        outputDoESummaryPath = os.path.join(outputFolder, 'HI-9829_For_DoE.CSV')
         
         try:
             outputCSVDoE = open(outputDoESummaryPath, 'w')
