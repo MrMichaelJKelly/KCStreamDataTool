@@ -60,7 +60,10 @@ verbose = False
 
 # handle to output CSV files
 outputCSVSummary = None     # Data summary by site, with median values
-outputCSVDoE = None         # Output for DoE
+outputCSVDoE = None         # Output for DoE logger data
+
+# Temperature data
+outputCSVDoETemperature = None
 
 
 # Standard data headers - some are in a slightly different format and have to be massaged a bit...
@@ -95,7 +98,7 @@ unitsAndMethods = { 'Temp.[C]' : ['unit', 'method'],
 }
 
 
-# Headers for the DoE Output file - this is the format of each line in that file
+# Headers for the DoE Output file for loggers - this is the format of each line in that file
 outputCSVDoEHeaders = [
     'Study_ID',
     'Location_ID',
@@ -156,6 +159,35 @@ outputCSVDoEHeaders = [
     'Result_Taxon_Name',
     'Result_Taxon_TSN',
     'Result_Taxon_Unidentified_Species',
+    'Result_Taxon_Life_Stage'
+]
+
+# Headers for Temperature DoE output file
+outputCSVDoETemperatureHeaders = [
+    'Study_ID',
+    'Instrument_ID',
+    'Location_ID',
+    'Study-Specific_Location_ID',
+    'Field_Collection_Type',
+    'Field_Collector',
+    'Field_Collection_Reference_Point',
+    'Field_Collection_Depth',
+    'Field_Collection_Depth_Units',
+    'Matrix',
+    'Source',
+    'Start_Date',
+    'Start_Time',
+    'End_Date',
+    'End_Time',
+    'Parameter_Name',
+    'Result_Value',
+    'Result_Unit',
+    'Result_Data_Qualifier',
+    'Result_Method',
+    'Comment',
+    'Groundwater_Result_Accuracy',
+    'Groundwater_Level_Measuring_Point_ID'
+    'Location_ID',
     'Result_Taxon_Life_Stage'
 ]
 
@@ -246,13 +278,16 @@ class MedianFinder(object):
 class SiteItemMeasurements(object):
 
     # Create a holder for a list of median values for a particular measurement for a
-    # particular site.  The list has the values for each date.
+    # particular site.  The list has the values for each date.  The timestamps are als
+    # a per-date list but just have the first time we encountered on that date - it is
+    # for the DoE Logger summary (per Evan, first time is OK)
     def __init__(self, site, item):
         self.siteName = site
         self.itemName = item
         self.medianFinders = {}
+        self.timestamps = {}
     
-    def recordValue(self, dt, val):
+    def recordValue(self, dt, tm, val):
         global verbose
         if dt not in self.medianFinders:      # first time we are seeing this date
             # A MedianFinder is an accumulator for a particular measurement on a
@@ -274,9 +309,14 @@ class SiteItemMeasurements(object):
             elif strDateNext in self.medianFinders:
                 dt = strDateNext
             self.medianFinders[dt] = MedianFinder()
+            # Per Evan - OK to just remember the first timestamp for a day - this is needed for
+            # DoE Summary
+            self.timestamps[dt] = tm
+        # Record a new value for a site we've already seen - the Median Finder accumulates
+        # these to eventually find the median.
         self.medianFinders[dt].addNum(val)
         if verbose:
-            print('recordValue: recorded %f for %s' % (val, dt))
+            print('recordValue: recorded %f for %s at %s' % (val, dt, tm))
     
     # Calculate the medians for each date by enumerating the
     # dates for which values have been recorded and using the
@@ -293,10 +333,10 @@ class SiteItemMeasurements(object):
 # This list consists of MedianValue objects that record values per-site, per-date for each item marked
 # above as needing a median.  
 class MedianCollector(object):
-    
+    # List of SiteItemMeasurements values
     siteMeasurementValues = {}
     
-    def addMeasurement(self, site, dt, item, val):
+    def addMeasurement(self, site, dt, tm, item, val):
         global verbose
         if verbose:
             print('Recording %s as %f' % (item, val))
@@ -306,7 +346,7 @@ class MedianCollector(object):
             # Don't yet have a tracker for this item for this site - add it
             self.siteMeasurementValues[site][item] = SiteItemMeasurements(site, item)
         # Now record the value for this item on this date at this site
-        self.siteMeasurementValues[site][item].recordValue(dt, val)
+        self.siteMeasurementValues[site][item].recordValue(dt, tm, val)
 
     # if isForDoE - we are emitting the summary for the DoE
     def emitMedianValuesCSV(self, outputCSVSummaryFile, isForDoE):
@@ -317,9 +357,11 @@ class MedianCollector(object):
                         outputCSVSummaryFile.write('%s,"%s",%s,%f\n' % (site, item, dt, medianValue))
                     else:
                         # DoE Summary is only for certain measurements and has a completely different format
+                        # Get the time to report for this date
+                        tm = itemCollection.timestamps[dt]
                         if item in includeInDoESummary.keys():
                             # Yellowhawk,<Site>,<Site>,Measurement,NGO,<Start Date (MM/DD/YYYY),Time (HH:MM:SS,24),,,,,,,,,,,,,,,,Water (col 24),Fresh/Surface Water,,,,,,,,,<parameter>,,,,,<median>,<unit>,,,,,,,,,,,<method>
-                            outputCSVSummaryFile.write('Yellowhawk,"%s","%s",Measurement,NGO,"%s",Time (HH:MM:SS,24),,,,,,,,,,,,,,,,"Water","Fresh/Surface Water",,,,,,,,,"%s",,,,,%f,"%s",,,,,,,,,,,<method>\n' % (site, site,dt,includeInDoESummary[item],medianValue,valueUnitsDoESummary[item]))
+                            outputCSVSummaryFile.write('Yellowhawk,"%s","%s",Measurement,NGO,"%s","%s",,,,,,,,,,,,,,,,"Water","Fresh/Surface Water",,,,,,,,,"%s",,,,,%f,"%s",,,,,,,,,,,<method>\n' % (site, site,dt,tm,includeInDoESummary[item],medianValue,valueUnitsDoESummary[item]))
 
 # Process the Temperature data CSV files found.
 # Input CSV files are in two different formats:
@@ -491,7 +533,10 @@ def processTemperatureFile(rawDataFile, logFile):
         logFile.write('%d data rows read.\n' % nRows)
         
     return ret
-    
+
+#
+# LOGGER FILES
+#
 # Process the log files found
 def processLogFiles(logFiles):
     global outputCSVSummary
@@ -682,7 +727,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                         
                     # Somewhere these numeric values have to be defined, right?
                     # 3 == date per https://pythonhosted.org/xlrd3/cell.html - but there are two
-                    # in the data, a date and a time.  0 is he date, 1 is the time.  Sigh.
+                    # in the data, a date and a time.  0 is the date, 1 is the time.  Sigh.
                     if (cellType == 3):
                         if (columnIndex == 0):      # Date
                             # Date
@@ -695,9 +740,12 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                             if (d > latestDateSeen):
                                 latestDateSeen = d
                         else:  # Only other date value in input is the Time stamp
-                            # Just emit time as is.
-                            outputCSVSummary.write(str(cellValue.value))
-                        
+                            # Just emit time as is.  Remember since we need to add it
+                            # to the median finder so we can emit the timestamp in the
+                            # DoE Summary.
+                            year, month, day, hour, minute, second = xldate.xldate_as_tuple(cellValue.value, book.datemode)
+                            strTime = '%02d:%02d:%02d' % (hour, minute, second)
+                            outputCSVSummary.write(strTime)
                     elif (cellType in [1, 2]):   # 1 = text, 2 = number
                             # Other column - e.g. ph, Turb.FNU, etc.
                             outputCSVSummary.write(str(cellValue.value))
@@ -709,7 +757,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                             else:
                                 measurementValue = cellValue.value
                             if calculateMedians[columnIndex]:
-                                medianCollector.addMeasurement(siteName, strDate, columnHeaders[columnIndex], measurementValue)
+                                medianCollector.addMeasurement(siteName, strDate, strTime, columnHeaders[columnIndex], measurementValue)
                     else:
                         xlrdLog.write('%s: Unknown value type for [%s,%s] : %s\n' % (rawDataFile, rowIndex, columnIndex, cellType))
                     if (nCols < nColsToWrite):
