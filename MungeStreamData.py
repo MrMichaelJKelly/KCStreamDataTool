@@ -31,6 +31,7 @@ from pathlib import Path
 from xlrd import open_workbook, XLRDError, xldate
 import xlrd
 import csv
+from collections import defaultdict
 
 #import xlrd
 #book = xlrd.open_workbook("myfile.xls")
@@ -79,6 +80,7 @@ includeInDoESummary = {
     'Temp.[C]' : 'Temperature, water',
     'pH' : 'pH',
     'D.O.[%]' : 'Dissolved Oxygen Percent Saturation',
+    'EC[uS/cm]' : 'Electrical Conductivity',
     'Turb.FNU' : 'Turbitity'
 }
 
@@ -87,6 +89,7 @@ valueUnitsDoESummary = {
     'Temp.[C]' : 'deg C',
     'pH' : 'pH',
     'D.O.[%]' : '%',
+    'EC[uS/cm]' : 'uS/cm',
     'Turb.FNU' : 'FNU'
 }
 
@@ -94,6 +97,7 @@ valueUnitsDoESummary = {
 unitsAndMethods = { 'Temp.[C]' : ['unit', 'method'],
                     'pH' : ['unit', 'method'],
                     'D.O.[%]' : ['unit', 'method'],
+                    'EC[uS/cm]' : ['unit', 'method'],
                     'Turb.FNU' : ['unit', 'method']
 }
 
@@ -330,6 +334,27 @@ class SiteItemMeasurements(object):
             medians[dt] = self.medianFinders[dt].findMedian()
         return medians
 
+# A list of temperature values for a particular site/item by date
+# Designed to be put in a list indexed by site and item.
+# Will record both DO and temperature if both are available - that's itemName
+class SiteItemTempMeasurements(object):
+
+    # Create a holder for a list of median values for a particular measurement for a
+    # particular site.  The list has the values for each date.  The timestamps are als
+    # a per-date list but just have the first time we encountered on that date - it is
+    # for the DoE Logger summary (per Evan, first time is OK)
+    def __init__(self, site, item):
+        self.siteName = site
+        self.itemName = item
+        self.values = defaultdict(defaultdict)      # dictionary of dictionaries indexed by date and time
+    
+    def recordValue(self, dt, tm, val):
+        global verbose
+        self.values[dt][tm] = val
+        if verbose:
+            print('recordValue: recorded %f for %s at %s' % (val, dt, tm))
+
+
 # This list consists of MedianValue objects that record values per-site, per-date for each item marked
 # above as needing a median.  
 class MedianCollector(object):
@@ -348,6 +373,7 @@ class MedianCollector(object):
         # Now record the value for this item on this date at this site
         self.siteMeasurementValues[site][item].recordValue(dt, tm, val)
 
+    # Emit the summary files per site with median values
     # if isForDoE - we are emitting the summary for the DoE
     def emitMedianValuesCSV(self, outputCSVSummaryFile, isForDoE):
         for site, siteCollection in self.siteMeasurementValues.items():
@@ -381,24 +407,28 @@ class MedianCollector(object):
 #2,05/21/17 02:31:27 PM,10.89,59.43,,,
 #3,05/21/17 03:31:27 PM,10.61,60.58,,,
 #
-# This routine reads both formats and emits a CSV file with this format:
+# This routine reads both formats and emits a per-site CSV file with this format:
 #
 # Site,"Date Time, GMT-07:00","DO conc, mg/L","Temp, DegF","Source File"
 #
-def processTemperatureFiles(temperatureFiles, logFile):
+def processTemperatureFiles(temperatureFiles, logFile, outputFolder):
     ret = True      # optimistic
     
+    siteDataFiles = {}       # indexed by site, gives handle of file
+    
     try:    
-        # Write the CSV header row
-        outputCSVSummary.write('"Site","Date Time (GMT-07:00)","DO conc (mg/L)","Temp (DegF)","RawDataFile"\n')
-       
+        # DO
+        # Temp
+        # siteTemperatureData = SiteItemMeasurements(site, item)
         # Process each data (temperature) file
         for file in temperatureFiles:
             logFile.write("=== %s ===\n" % file)
-            if not processTemperatureFile(file, logFile):
+            if not processTemperatureFile(file, logFile, outputFolder, siteDataFiles):
                 ret = False
     finally:
         logFile.close()
+        for siteDataFile in siteDataFiles:
+                siteDataFiles[siteDataFile].close()
 
     return ret
 
@@ -449,7 +479,7 @@ def mapTemperatureSiteName(siteName):
 
 
 # Process one raw data temperature file 
-def processTemperatureFile(rawDataFile, logFile):
+def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
     
     global sites, outputCSVSummary
     nRows = 0           # Number rows written to output
@@ -486,6 +516,7 @@ def processTemperatureFile(rawDataFile, logFile):
                     numColumns = len(row)
                     if numColumns >= 7:
                         # Determine which flavor of format we've got based on CSV header
+                        # If we have both - emit two rows, one per measurement.
                         if nRows == 1:
                             if row[2][:2] == "DO":
                                 # Flavor with DO in row
@@ -515,7 +546,13 @@ def processTemperatureFile(rawDataFile, logFile):
                         logFile.write('CSV has non-standard format - skipping file\n')
                     elif nRows > 1:
                         # Skip first two rows that are headers - emit data for rows 2... n
-                        outputCSVSummary.write('{},{},{},{},{}\n'.format(siteName, row[1], temp, do, rawDataFile))
+                        # Have we seen this site before, i.e. do we have a file for it?
+                        if siteName not in siteDataFiles:
+                            siteTemperatureFilePath = os.path.join(outputFolder, siteName)
+                            siteDataFiles[siteName] = open(siteTemperatureFilePath, 'w')
+                            # Write the CSV header row
+                            siteDataFiles[siteName].write('"Site","Date Time (GMT-07:00)","DO conc (mg/L)","Temp (DegF)","RawDataFile"\n')
+                        siteDataFiles[siteName].write('{},{},{},{},{}\n'.format(siteName, row[1], temp, do, rawDataFile))
                         ret = True
                 nRows += 1
                 
@@ -879,7 +916,7 @@ def main(argv):
     files = collectFiles(inputFolder, outputFolder, doTemperature)
     
     if doTemperature:
-        processTemperatureFiles(files, outputLogFile)
+        processTemperatureFiles(files, outputLogFile, outputFolder)
     else:
         processLogFiles(files)
 
