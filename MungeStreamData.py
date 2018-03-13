@@ -94,11 +94,11 @@ valueUnitsDoESummary = {
 }
 
 # List of units and methods - each measurment has a list that [0] is the Unit value and [1] is the method value
-unitsAndMethods = { 'Temp.[C]' : ['unit', 'method'],
-                    'pH' : ['unit', 'method'],
-                    'D.O.[%]' : ['unit', 'method'],
-                    'EC[uS/cm]' : ['unit', 'method'],
-                    'Turb.FNU' : ['unit', 'method']
+unitsAndMethods = { 'Temp.[C]' : ['deg C', 'method'],
+                    'pH' : ['pH', 'method'],
+                    'D.O.[%]' : ['%', 'method'],
+                    'EC[uS/cm]' : ['uS/cm', 'method'],
+                    'Turb.FNU' : ['FNU', 'method']
 }
 
 
@@ -169,7 +169,7 @@ outputCSVDoEHeaders = [
 # Headers for Temperature DoE output file
 outputCSVDoETemperatureHeaders = [
     'Study_ID',
-    'Instrument_ID',
+    'Instrument_ID',    # If Yelmo, YelRu, YelPR = Onset HOBO U26-001, otherwise Onset HOBO U22-001
     'Location_ID',
     'Study-Specific_Location_ID',
     'Field_Collection_Type',
@@ -183,9 +183,9 @@ outputCSVDoETemperatureHeaders = [
     'Start_Time',
     'End_Date',
     'End_Time',
-    'Parameter_Name',
+    'Result_Parameter_Name',    # DO = "Disolved Oxygen", Temperature = "Temperature, water"
     'Result_Value',
-    'Result_Unit',
+    'Result_Unit',          # DO = mg/L, Temperature = deg C
     'Result_Data_Qualifier',
     'Result_Method',
     'Comment',
@@ -412,19 +412,25 @@ class MedianCollector(object):
 # Site,"Date Time, GMT-07:00","DO conc, mg/L","Temp, DegF","Source File"
 #
 def processTemperatureFiles(temperatureFiles, logFile, outputFolder):
+    
+    global outputCSVDoETemperature
+    
     ret = True      # optimistic
     
     siteDataFiles = {}       # indexed by site, gives handle of file
     
+    # Write the DoE summary CSV for Temperature
+    for item in outputCSVDoETemperatureHeaders:
+        outputCSVDoETemperature.write(item+',')
+    outputCSVDoETemperature.write('\n')    
+    
     try:    
-        # DO
-        # Temp
-        # siteTemperatureData = SiteItemMeasurements(site, item)
         # Process each data (temperature) file
         for file in temperatureFiles:
             logFile.write("=== %s ===\n" % file)
             if not processTemperatureFile(file, logFile, outputFolder, siteDataFiles):
                 ret = False
+
     finally:
         logFile.close()
         for siteDataFile in siteDataFiles:
@@ -481,7 +487,7 @@ def mapTemperatureSiteName(siteName):
 # Process one raw data temperature file 
 def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
     
-    global sites, outputCSVSummary
+    global sites, outputCSVSummaryTemperature
     nRows = 0           # Number rows written to output
     ret = True
     
@@ -503,7 +509,7 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
                     # Some of the CSV files have a trailing " - remove it
                     if len(siteName) > 1 and siteName[-1] == '"':
                         siteName = siteName[:-1]
-                    # Use the mapping list to convert sitenames
+                    # Use the mapping list to standardize sitenames
                     newSiteName = mapTemperatureSiteName(siteName)
                     print ('Site name in data file {} => {}'.format(siteName,newSiteName))
                     if newSiteName is None:
@@ -548,11 +554,33 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
                         # Skip first two rows that are headers - emit data for rows 2... n
                         # Have we seen this site before, i.e. do we have a file for it?
                         if siteName not in siteDataFiles:
+                            # First time we've seen this site - create a file and emit the header
                             siteTemperatureFilePath = os.path.join(outputFolder, siteName)
                             siteDataFiles[siteName] = open(siteTemperatureFilePath, 'w')
                             # Write the CSV header row
                             siteDataFiles[siteName].write('"Site","Date Time (GMT-07:00)","DO conc (mg/L)","Temp (DegF)","RawDataFile"\n')
                         siteDataFiles[siteName].write('{},{},{},{},{}\n'.format(siteName, row[1], temp, do, rawDataFile))
+                        # Write to DoE Summary file, too - different format, one line per measurement for DO and temp
+                        specialSites = [ "YELMO" , "YELRU" , "YELPR" ]
+                        if siteName in specialSites:
+                            instrumentID = "Onset HOBO U26-001"
+                        else:
+                            instrumentID = "Onset HOBO U22-001"
+                        # Split up date and time
+                        try:
+                            dttime = parse(row[1])
+                            dt = dttime.strftime("%m-%d-%Y")
+                            tm = dttime.strftime("%H:%M:%S")
+                        except ValueError:
+                            dt = ""
+                            tm = ""
+                            
+                        # If DO is present in input data, emit rows for both DO and temp
+                        if hasDO:
+                            # Yellowhawk,<Instrument>,<Site>,<Site>,Measurement,NGO,,,,Water,Fresh/Surface Water,<Start Date (MM/DD/YYYY),Time (HH:MM:SS,24),,,<parameter>,<val>,<unit>,<method>
+                            outputCSVDoETemperature.write('Yellowhawk,"%s","%s","%s",Measurement,NGO,,,,"Water","Fresh/Surface Water","%s","%s",,,"%s","%s","%s",,<method>\n' % (instrumentID, siteName, siteName, dt,tm,"Dissolved Oxygen",do,"mg/L"))
+                        #Temp
+                        outputCSVDoETemperature.write(    'Yellowhawk,"%s","%s","%s",Measurement,NGO,,,,"Water","Fresh/Surface Water","%s","%s",,,"%s","%s","%s",,<method>\n' % (instrumentID, siteName, siteName, dt,tm,"Temperature, water",temp,"deg F"))
                         ret = True
                 nRows += 1
                 
@@ -849,7 +877,7 @@ def main(argv):
 
     global verbose
     global outputCSVSummary
-    global outputCSVDoE
+    global outputCSVDoE, outputCSVDoETemperature
     global sites
    
    # Defaults for output folder, input folder and whether we are processing logger or
@@ -882,6 +910,12 @@ def main(argv):
     if doTemperature:
         outputSummaryPath = os.path.join(outputFolder, "TemperatureData.CSV")
         logPath = os.path.join(outputFolder, "TemperatureLogFile.txt")
+        outputDoESummaryPath = os.path.join(outputFolder, 'Temp_Data_For_DoE.CSV')
+        try:
+            outputCSVDoETemperature = open(outputDoESummaryPath, 'w')
+        except IOError as e:
+            print('Error opening '+outputDoESummaryPath,': '+ str(e))
+            helpMessage()
     else:
         # We emit two output files - Summary  which is an aggregated summary of all the data files
         # we read, and DoESummary which is for input to the DoE site in a format they prescribe.
