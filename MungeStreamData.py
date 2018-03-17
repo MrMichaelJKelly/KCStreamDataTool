@@ -609,18 +609,17 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
 # LOGGER FILES
 #
 # Process the log files found
-def processLogFiles(logFiles):
+def processLogFiles(outputLogFile, logFiles):
     global outputCSVSummary
     global outputCSVDoE
     
     ret = True      # optimistic
     
-    xlrdLogFileHandle = open("xlrd_log_file.txt", "w+")
     skip_these = (
         "WARNING *** OLE2 inconsistency",
         )
     try:        
-        xlrdLogFile = XlrdLogFileFilter(xlrdLogFileHandle, skip_these)
+        xlrdLogFile = XlrdLogFileFilter(outputLogFile, skip_these)
         
         # Write the CSV header row
         outputCSVSummary.write('Site, RawDataFile,')
@@ -632,12 +631,13 @@ def processLogFiles(logFiles):
         
         # Process each data (log) file
         for file in logFiles:
-            xlrdLogFileHandle.write("=== %s ===\n" % file)
+            outputLogFile.write("=== %s ===\n" % file)
             if not processLogFile(file, xlrdLogFile, medianCollector):
-                xlrdLogFileHandle.write('Error processing %s\n' % file)
+                outputLogFile.write('Error processing %s\n' % file)
                 ret = False
-    finally:
-        xlrdLogFileHandle.close()
+    except Exception as e:
+        outputLogFile.write("Error - %s\n", str(e))
+        ret = False 
         
     # Emit the median values for each measurement to the CSV
     outputCSVSummary.write('\n\nMEDIAN VALUES\nSite,Measurement,Date,Median\n')
@@ -912,12 +912,19 @@ def main(argv):
     if inputFolder == '' or not os.path.isdir(inputFolder):
         print(inputFolder+' is not a folder containing data files.')
         helpMessage()
-        
+
+    # Open up log file        
+    try:
+        logPath = os.path.join(outputFolder, "LogFile.txt")
+        outputLogFile = open(logPath, 'w')
+    except IOError as e:
+        print('Error opening '+logPath,': '+ str(e))
+        exit(-1)
+
     if doTemperature:
         # For temperature data - we just emit per-site DoE summary files, not
         # an aggregated file as we do for loggers
         outputSummaryPath = os.path.join(outputFolder, 'TemperatureData.CSV')
-        logPath = os.path.join(outputFolder, "TemperatureLogFile.txt")
 
         try:
             outputCSVSummary = open(outputSummaryPath, 'w')
@@ -925,11 +932,6 @@ def main(argv):
             print('Error opening '+outputSummaryPath,': '+ str(e))
             helpMessage()
 
-        try:
-            outputLogFile = open(logPath, 'w')
-        except IOError as e:
-            print('Error opening '+logPath,': '+ str(e))
-            exit(-1)
         print('Processing Temperature file data in "'+ inputFolder+ '"...')
         print('Writing to:\n'+outputSummaryPath+'\nand per-site DoE files named Xxxxx_Temperature_DoE.csv\n')
     else:
@@ -959,7 +961,8 @@ def main(argv):
     if doTemperature:
         processTemperatureFiles(files, outputLogFile, outputFolder)
     else:
-        processLogFiles(files)
+        if not processLogFiles(outputLogFile, files):
+            print("Something went wrong, check the error log\n")
         
     outputCSVSummary.close()
     outputLogFile.close()
