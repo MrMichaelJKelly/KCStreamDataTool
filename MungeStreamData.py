@@ -386,7 +386,7 @@ class MedianCollector(object):
                         # Get the time to report for this date
                         tm = itemCollection.timestamps[dt]
                         if item in includeInDoESummary.keys():
-                            # Yellowhawk,<Site>,<Site>,Measurement,NGO,<Start Date (MM/DD/YYYY),Time (HH:MM:SS,24),,,,,,,,,,,,,,,,Water (col 24),Fresh/Surface Water,,,,,,,,,<parameter>,,,,,<median>,<unit>,,,,,,,,,,,<method>
+                            # <StudyID>,<Site>,<Site>,Measurement,NGO,<Start Date (MM/DD/YYYY),Time (HH:MM:SS,24),,,,,,,,,,,,,,,,Water (col 24),Fresh/Surface Water,,,,,,,,,<parameter>,,,,,<median>,<unit>,,,,,,,,,,,<method>
                             outputCSVSummaryFile.write('Yellowhawk,"%s","%s",Measurement,NGO,"%s","%s",,,,,,,,,,,,,,,,"Water","Fresh/Surface Water",,,,,,,,,"%s",,,,,%f,"%s",,,,,,,,,,,"%s"\n' % (site, site,dt,tm,includeInDoESummary[item],medianValue,valueUnitsDoESummary[item],methodsDoESummary[item]))
 
 # Process the Temperature data CSV files found.
