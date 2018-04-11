@@ -8,7 +8,9 @@ GUI for KC Stream Data Tool (script written by Mike Kelly)
 """
 
 import tkinter as tk
-#import tkFileDialog
+from tkinter import filedialog
+import os
+
 
 def BtnPress(btn_Name):
     print("The {} button was pressed".format(btn_Name))
@@ -33,6 +35,15 @@ lbl_OutputFiles.grid(row = 3, column = 1)
 
 entry_OutputFiles = tk.Entry(window)
 entry_OutputFiles.grid(row = 3, column = 2)
+
+
+# Buttons to call file browser dialog for input/output directories
+btn_BrowseInputDir = tk.Button(window, text = "Browse", command = lambda: BtnPress("BrowseInput"))
+btn_BrowseInputDir.grid(row = 2, column = 3)
+
+btn_BrowseOutputDir = tk.Button(window, text = "Browse", command = lambda: BtnPress("BrowseOutput"))
+btn_BrowseOutputDir.grid(row = 3, column = 3)
+
 
 # Buttons to choose temperature or logger data output
 btn_TemperatureData = tk.Button(window, text = "Temperature", command = lambda: BtnPress("Temperature"))
