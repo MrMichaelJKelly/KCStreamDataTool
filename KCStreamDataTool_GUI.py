@@ -8,14 +8,34 @@ GUI for KC Stream Data Tool (script written by Mike Kelly)
 """
 
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 import os
 
 
 def BtnPress(btn_Name):
     # Only called for Logger and Temperature Buttons to start the mungeStreamData.py script
-    InputFiles = 
+    global window, entry_InputFiles, entry_OutputFiles, wid
+        
+    InputFiles = entry_InputFiles.get()
+    OutputFiles = entry_OutputFiles.get()
+    
+    if len(InputFiles) == 0:
+       messagebox.showerror("Error", "Please choose a folder containing the input files")
+       return
+   
+    if len(OutputFiles) == 0:
+       messagebox.showerror("Error", "Please choose a folder to deposit the output files")
+       return
+    
+    if btn_Name == "Temperature":
+        option = "-t"
+    else:
+        option = ""
+    
+    
     print("The {} button was pressed".format(btn_Name))
+    os.system('cmd /k python MungeStreamData.py -i "{}" -o "{}" {}'.format(InputFiles, OutputFiles, option))
+    
     
 def BtnPress_Browse(entry_Name):
     from tkinter.filedialog import askdirectory
@@ -31,7 +51,7 @@ def BtnPress_Browse(entry_Name):
         entry_OutputFiles.insert(0, filename)
         
 
-global window, entry_InputFiles, entry_OutputFiles
+global window, entry_InputFiles, entry_OutputFiles, wid
 window = tk.Tk()
 
 lbl_Title = tk.Label(window, text = "Kooskooskie Monitoring Data Processor")
@@ -67,5 +87,11 @@ btn_LoggerData = tk.Button(window, text = "Logger", command = lambda: BtnPress("
 
 btn_TemperatureData.grid(row = 4,column = 1)
 btn_LoggerData.grid(row = 4, column = 3)
+
+# Create the output window
+termf = tk.Frame(window, height=100, width=500)
+termf.grid(row = 5, column = 2)
+
+wid = termf.winfo_id()
 
 root.mainloop()
