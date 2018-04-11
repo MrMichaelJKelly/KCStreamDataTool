@@ -1,4 +1,5 @@
 # KCStreamDataTool - Tool for munging KC Stream Data 
+Changed by Evan
 
 # Mini Spec for Data Massaging
 
