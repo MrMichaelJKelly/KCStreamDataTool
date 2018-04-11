@@ -13,9 +13,25 @@ import os
 
 
 def BtnPress(btn_Name):
+    # Only called for Logger and Temperature Buttons to start the mungeStreamData.py script
+    InputFiles = 
     print("The {} button was pressed".format(btn_Name))
+    
+def BtnPress_Browse(entry_Name):
+    from tkinter.filedialog import askdirectory
+    
+    global window, entry_InputFiles, entry_OutputFiles
+    
+    filename = askdirectory()
+    if entry_Name == "entry_InputFiles":
+        entry_InputFiles.delete(0, END)
+        entry_InputFiles.insert(0, filename)
+    else:
+        entry_OutputFiles.delete(0, END)
+        entry_OutputFiles.insert(0, filename)
+        
 
-
+global window, entry_InputFiles, entry_OutputFiles
 window = tk.Tk()
 
 lbl_Title = tk.Label(window, text = "Kooskooskie Monitoring Data Processor")
@@ -38,10 +54,10 @@ entry_OutputFiles.grid(row = 3, column = 2)
 
 
 # Buttons to call file browser dialog for input/output directories
-btn_BrowseInputDir = tk.Button(window, text = "Browse", command = lambda: BtnPress("BrowseInput"))
+btn_BrowseInputDir = tk.Button(window, text = "Browse", command = lambda: BtnPress_Browse("entry_InputFiles"))
 btn_BrowseInputDir.grid(row = 2, column = 3)
 
-btn_BrowseOutputDir = tk.Button(window, text = "Browse", command = lambda: BtnPress("BrowseOutput"))
+btn_BrowseOutputDir = tk.Button(window, text = "Browse", command = lambda: BtnPress_Browse("entry_OutputFiles"))
 btn_BrowseOutputDir.grid(row = 3, column = 3)
 
 
