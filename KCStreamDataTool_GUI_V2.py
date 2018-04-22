@@ -22,7 +22,10 @@ class KCStreamDataApp():
         
         self.CreateWidgets()
         
-    def CreateWidgets(self):        
+    def CreateWidgets(self):   
+        """Called by __init__ to build and position widgets of the KC Stream Data Processor GUI"""
+        
+        # Configure method for rows and columns of self.window which gives them "weight" and allows them to resize
         self.window.rowconfigure(1, weight=1)
         self.window.rowconfigure(2, weight=1)
         self.window.rowconfigure(3, weight=1)
@@ -52,7 +55,6 @@ class KCStreamDataApp():
         self.str_OutputFiles = tk.StringVar()
         self.entry_OutputFiles = tk.Entry(Frm_InputOutput, textvariable = self.str_OutputFiles)
         self.entry_OutputFiles.grid(row = 2, column = 2, padx = 10, ipadx = 3, ipady = 3,sticky = tk.E + tk.W)
-        #entry_OutputFiles = self.OutputFiles
         
         # Buttons to call file browser dialog for input/output directories
         btn_BrowseInputDir = ttk.Button(Frm_InputOutput, text = "Browse", command = self.BtnPress_BrowseInput)
@@ -61,9 +63,7 @@ class KCStreamDataApp():
         btn_BrowseOutputDir = ttk.Button(Frm_InputOutput, text = "Browse", command = self.BtnPress_BrowseOutput)
         btn_BrowseOutputDir.grid(row = 2, column = 3, pady = 2, ipadx = 5, ipady = 3)
         
-        #Row and column configuration:
-#        Frm_InputOutput.rowconfigure(1, weight = 1)
-#        Frm_InputOutput.rowconfigure(2, weight = 1)
+        # Row and column configuration:
         Frm_InputOutput.columnconfigure(1, weight = 1)
         Frm_InputOutput.columnconfigure(2, weight = 2)
         Frm_InputOutput.columnconfigure(3, weight = 1)
@@ -92,14 +92,14 @@ class KCStreamDataApp():
         Frm_Choices.columnconfigure(2, weight = 1)
         
         # Create the output window
-        termf = tk.Frame(self.window, height=100, width=500)
+        termf = tk.Frame(self.window) #, height=100, width=500)
         termf.grid(row = 4, column = 1)
         
         wid = termf.winfo_id()
 
 
     def BtnPress_Temperature(self):
-        # Only called for button to start the mungeStreamData.py script with the option "-t"
+        """Only called for button to start the mungeStreamData.py script with the option "-t" """
             
         InputFiles = self.str_InputFiles.get()
         OutputFiles = self.str_OutputFiles.get()
@@ -119,7 +119,7 @@ class KCStreamDataApp():
         os.system('cmd /k python MungeStreamData.py -i "{}" -o "{}" {}'.format(InputFiles, OutputFiles, option))
     
     def BtnPress_Logger(self):
-         #Only called for Logger button to start the mungeStreamData.py script
+        """Only called for Logger button to start the mungeStreamData.py script"""
             
         InputFiles = self.str_InputFiles.get()
         OutputFiles = self.str_OutputFiles.get()
@@ -135,10 +135,12 @@ class KCStreamDataApp():
         self.window.destroy()
         
         print("The logger button was pressed")
-        print('cmd /k python MungeStreamData.py -i "{}" -o "{}"'.format(InputFiles, OutputFiles))
+        os.system('cmd /k python MungeStreamData.py -i "{}" -o "{}"'.format(InputFiles, OutputFiles))
         
         
     def BtnPress_BrowseInput(self):
+        """Calls a file dialog box when the 'browse' button for the input files field is pressed"""
+        
         from tkinter.filedialog import askdirectory      
         
         filename = askdirectory()
@@ -148,6 +150,8 @@ class KCStreamDataApp():
         
             
     def BtnPress_BrowseOutput(self):
+        """Calls a file dialog box when the 'browse' button for the output files field is pressed"""
+        
         from tkinter.filedialog import askdirectory      
         
         filename = askdirectory()
@@ -156,6 +160,7 @@ class KCStreamDataApp():
         self.entry_OutputFiles.insert(0, filename)
         
     def QuitWin(self):
+        """Closes the window when the 'Quit' button is pressed"""
         self.window.destroy()
         
 
