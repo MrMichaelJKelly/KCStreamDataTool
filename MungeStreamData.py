@@ -33,17 +33,7 @@ import xlrd
 import csv
 from collections import defaultdict
 
-#import xlrd
-#book = xlrd.open_workbook("myfile.xls")
-#print("The number of worksheets is {0}".format(book.nsheets))
-#print("Worksheet name(s): {0}".format(book.sheet_names()))
-#sh = book.sheet_by_index(0)
-#print("{0} {1} {2}".format(sh.name, sh.nrows, sh.ncols))
-#print("Cell D30 is {0}".format(sh.cell_value(rowx=29, colx=3)))
-#for rx in range(sh.nrows):
-#    print(sh.row(rx))
-
-# Files to exclude from if present
+# Files to exclude from list of found files if present
 filesToExclude = ['.dropbox', 'desktop.ini' ]
 
 # Dictionary of sites encountered - to look for dupes - the value is a SiteData named tuple containing
@@ -101,8 +91,10 @@ methodsDoESummary = { 'Temp.[C]' : 'TEMPLOGGER',
                     'Turb.FNU' : 'TURBM'
 }
 
+# We added handling of temperature data and the DoE summary for temperature data later in the project - so
+# some values have Xxxxx and XxxxxTemp - the Xxxx is for the HI-9829 and the xxxxTemp is for the temperature loggers
 
-# Headers for the DoE Output file for loggers - this is the format of each line in that file
+# Headers for the DoE Output file for Hi-9829 - this is the format of each line in that file
 outputCSVDoEHeaders = [
     'Study_ID',
     'Location_ID',
@@ -199,6 +191,8 @@ outputCSVDoETemperatureHeaders = [
 # Locate files to process - if doTemperature is True, doing temperature
 # files - otherwise LOG files
 def collectFiles(inputFolder, outputFolder, doTemp):
+    global verbose
+    
     filesToRead = []
     # Regular expression to identify files we are interested in processing - for
     # Temperature data, it is CSV's; for log files, it is .XLS files
@@ -355,7 +349,7 @@ class SiteItemTempMeasurements(object):
             print('recordValue: recorded %f for %s at %s' % (val, dt, tm))
 
 
-# This list consists of MedianValue objects that record values per-site, per-date for each item marked
+# This list consists of SiteItemMeasurements objects that record values per-site, per-date for each item marked
 # above as needing a median.  
 class MedianCollector(object):
     # List of SiteItemMeasurements values
@@ -410,6 +404,8 @@ class MedianCollector(object):
 # This routine reads both formats and emits a per-site CSV file with this format:
 #
 # Site,"Date Time, GMT-07:00","DO conc, mg/L","Temp, DegF","Source File"
+#
+# As well as a per-site format for the WA State DoE
 #
 def processTemperatureFiles(temperatureFiles, logFile, outputFolder):
 
@@ -570,6 +566,8 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
                             instrumentID = "Onset HOBO U22-001"
                         # Split up date and time
                         try:
+                            # Parse the string in the second column that contains date and time into a Python
+                            # DateTime object that we can then manipulate
                             dttime = parse(row[1])
                             dt = dttime.strftime("%m-%d-%Y")
                             tm = dttime.strftime("%H:%M:%S")
@@ -606,9 +604,9 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
     return ret
 
 #
-# LOGGER FILES
+# HI-9829 Data FILES
 #
-# Process the log files found
+# Process the HI-9829 files found
 def processLogFiles(outputLogFile, logFiles):
     global outputCSVSummary
     global outputCSVDoE
@@ -854,13 +852,6 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
 
     return ret
         
-#print("The number of worksheets is {0}".format(book.nsheets))
-#print("Worksheet name(s): {0}".format(book.sheet_names()))
-#sh = book.sheet_by_index(0)
-#print("{0} {1} {2}".format(sh.name, sh.nrows, sh.ncols))
-#print("Cell D30 is {0}".format(sh.cell_value(rowx=29, =3)))
-#for rx in range(sh.nrows):
-
  
 def helpMessage():
       print('Usage:')
@@ -891,10 +882,11 @@ def main(argv):
     outputFolder = 'ProcessedStreamData'
     inputFolder = '.'
     doTemperature = False
+    doDoE = False
 
-    # Arguments
+    # Arguments passed on command line are in the "argv" list
     try:
-        opts, args = getopt.getopt(argv,"vhi:o:t",["verbose", "help", "input=", "help", "output=", "temp"])
+        opts, args = getopt.getopt(argv,"vhi:o:te",["verbose", "help", "input=", "help", "output=", "temp","dodoe"])
     except getopt.GetoptError:
         helpMessage()
     for opt, arg in opts:
@@ -908,6 +900,8 @@ def main(argv):
             inputFolder = arg
         elif opt in ("-t", "--temp"):
             doTemperature = True
+        elif opt in ("-e", "--dodoe"):
+            doDoE = True
 
     if inputFolder == '' or not os.path.isdir(inputFolder):
         print(inputFolder+' is not a folder containing data files.')
