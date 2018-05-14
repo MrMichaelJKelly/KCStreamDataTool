@@ -488,6 +488,7 @@ def mapTemperatureSiteName(siteName):
 def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
     
     global sites, outputCSVSummary
+    global DoEOutputOption
     nRows = 0           # Number rows written to output
     ret = True
     
@@ -559,9 +560,10 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
                             siteDataFiles[siteName] = open(siteTemperatureFilePath, 'w')
                             # Write the CSV header row for the 
                             # per-site DoE Summary
-                            for item in outputCSVDoETemperatureHeaders:
-                                siteDataFiles[siteName].write(item+',')
-                            siteDataFiles[siteName].write('\n')
+                            if DoEOutputOption:
+                                for item in outputCSVDoETemperatureHeaders:
+                                    siteDataFiles[siteName].write(item+',')
+                                siteDataFiles[siteName].write('\n')
                         # Handle some data mappings and split out date and time
                         specialSites = [ "YELMO" , "YELRU" , "YELPR" ]
                         if siteName in specialSites:
@@ -582,11 +584,12 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
                         
                         # Write to DoE Summary file - different format, one line per measurement for DO and temp
                         # If DO is present in input data, emit rows for both DO and temp
-                        if hasDO:
-                            # Yellowhawk,<Instrument>,<Site>,<Site>,Measurement,NGO,,,,Water,Fresh/Surface Water,<Start Date (MM/DD/YYYY),Time (HH:MM:SS,24),,,<parameter>,<val>,<unit>,<method>
-                            siteDataFiles[siteName].write('Yellowhawk,"%s","%s","%s",Measurement,NGO,,,,"Water","Fresh/Surface Water","%s","%s",,,"%s","%s","%s",,"DO-OPTICAL"\n' % (instrumentID, siteName, siteName, dt,tm,"Dissolved Oxygen",do,"mg/L"))
-                        #Temp
-                        siteDataFiles[siteName].write(    'Yellowhawk,"%s","%s","%s",Measurement,NGO,,,,"Water","Fresh/Surface Water","%s","%s",,,"%s","%s","%s",,"TEMPLOGGER"\n' % (instrumentID, siteName, siteName, dt,tm,"Temperature, water",temp,"deg F"))
+                        if DoEOutputOption:
+                            if hasDO:
+                                # Yellowhawk,<Instrument>,<Site>,<Site>,Measurement,NGO,,,,Water,Fresh/Surface Water,<Start Date (MM/DD/YYYY),Time (HH:MM:SS,24),,,<parameter>,<val>,<unit>,<method>
+                                siteDataFiles[siteName].write('Yellowhawk,"%s","%s","%s",Measurement,NGO,,,,"Water","Fresh/Surface Water","%s","%s",,,"%s","%s","%s",,"DO-OPTICAL"\n' % (instrumentID, siteName, siteName, dt,tm,"Dissolved Oxygen",do,"mg/L"))
+                            #Temp
+                            siteDataFiles[siteName].write(    'Yellowhawk,"%s","%s","%s",Measurement,NGO,,,,"Water","Fresh/Surface Water","%s","%s",,,"%s","%s","%s",,"TEMPLOGGER"\n' % (instrumentID, siteName, siteName, dt,tm,"Temperature, water",temp,"deg F"))
                         ret = True
                 nRows += 1
                 
@@ -612,6 +615,7 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
 def processLogFiles(outputLogFile, logFiles):
     global outputCSVSummary
     global outputCSVDoE
+    global DoEOutputOption
     
     ret = True      # optimistic
     
@@ -644,10 +648,11 @@ def processLogFiles(outputLogFile, logFiles):
     medianCollector.emitMedianValuesCSV(outputCSVSummary,False)
     
     # Write the DoE summary CSV
-    for item in outputCSVDoEHeaders:
-        outputCSVDoE.write(item+',')
-    outputCSVDoE.write('\n')    
-    medianCollector.emitMedianValuesCSV(outputCSVDoE,True)
+    if DoEOutputOption:
+        for item in outputCSVDoEHeaders:
+            outputCSVDoE.write(item+',')
+        outputCSVDoE.write('\n')    
+        medianCollector.emitMedianValuesCSV(outputCSVDoE,True)
 
     return ret
 
@@ -885,12 +890,14 @@ def main(argv):
     global outputCSVSummary
     global outputCSVDoE
     global sites
+    global DoEOutputOption
    
    # Defaults for output folder, input folder and whether we are processing logger or
    # temperature files
     outputFolder = 'ProcessedStreamData'
     inputFolder = '.'
     doTemperature = False
+    DoEOutputOption = False
 
     # Arguments
     try:
@@ -908,6 +915,8 @@ def main(argv):
             inputFolder = arg
         elif opt in ("-t", "--temp"):
             doTemperature = True
+        elif opt in ("-e", "--ecology"):
+            DoEOutputOption = True
 
     if inputFolder == '' or not os.path.isdir(inputFolder):
         print(inputFolder+' is not a folder containing data files.')
