@@ -869,11 +869,12 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
  
 def helpMessage():
       print('Usage:')
-      print('MungeStreamData.py [-t] [-h] [-v] [-o <outputFolder>] -i <inputFolder>')
+      print('MungeStreamData.py [-t] [-h] [-v] [-e] [-o <outputFolder>] -i <inputFolder>')
       print('Processes all data files under <inputFolder>; default is current directory')
       print('Output goes to specified output folder, default is ProcessedStreamData')
       print('Optional parameters:')
       print('    -t   - process temperature data files, not logger files.  Without -t, logger files are processed.')
+      print('    -e   - output WA Department of Ecology EIM-formatted .csv files')
       print('    -h   - print this help message')
       print('    -v   - verbose output (for debugging the tool)')
       sys.exit(2)
@@ -901,7 +902,7 @@ def main(argv):
 
     # Arguments
     try:
-        opts, args = getopt.getopt(argv,"vhi:o:t",["verbose", "help", "input=", "help", "output=", "temp"])
+        opts, args = getopt.getopt(argv,"vhi:o:te",["verbose", "help", "input=", "help", "output=", "temp", "ecology"])
     except getopt.GetoptError:
         helpMessage()
     for opt, arg in opts:
@@ -947,13 +948,14 @@ def main(argv):
         # We emit two output files - Summary  which is an aggregated summary of all the data files
         # we read, and DoESummary which is for input to the DoE site in a format they prescribe.
         outputSummaryPath = os.path.join(outputFolder, 'StreamData.CSV')
-        outputDoESummaryPath = os.path.join(outputFolder, 'HI-9829_For_DoE.CSV')
+        if DoEOutputOption:
+            outputDoESummaryPath = os.path.join(outputFolder, 'HI-9829_For_DoE.CSV')
         
-        try:
-            outputCSVDoE = open(outputDoESummaryPath, 'w')
-        except IOError as e:
-            print('Error opening '+outputDoESummaryPath,': '+ str(e))
-            helpMessage()
+            try:
+                outputCSVDoE = open(outputDoESummaryPath, 'w')
+            except IOError as e:
+                print('Error opening '+outputDoESummaryPath,': '+ str(e))
+                helpMessage()
 
         try:
             outputCSVSummary = open(outputSummaryPath, 'w')
