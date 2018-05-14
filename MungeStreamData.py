@@ -555,12 +555,12 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
                         # Skip first two rows that are headers - emit data for rows 2... n
                         # Have we seen this site before, i.e. do we have a file for it?
                         if siteName not in siteDataFiles:
-                            # First time we've seen this site - create a file and emit the header
-                            siteTemperatureFilePath = os.path.join(outputFolder, siteName + "_Temperature_DoE.csv")
-                            siteDataFiles[siteName] = open(siteTemperatureFilePath, 'w')
-                            # Write the CSV header row for the 
-                            # per-site DoE Summary
-                            if DoEOutputOption:
+                            if DoEOutputOption:                            
+                                # First time we've seen this site - create a file and emit the header
+                                siteTemperatureFilePath = os.path.join(outputFolder, siteName + "_Temperature_DoE.csv")
+                                siteDataFiles[siteName] = open(siteTemperatureFilePath, 'w')
+                                # Write the CSV header row for the 
+                                # per-site DoE Summary
                                 for item in outputCSVDoETemperatureHeaders:
                                     siteDataFiles[siteName].write(item+',')
                                 siteDataFiles[siteName].write('\n')
