@@ -978,7 +978,7 @@ def main(argv):
     outputCSVSummary.close()
     outputLogFile.close()
 
-    print('Done!')
+    print('<<Done!>>')
     
     # Dump out collected per-site data
     if not doTemperature:
