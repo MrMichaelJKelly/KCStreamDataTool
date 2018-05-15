@@ -14,7 +14,6 @@ import tkinter.scrolledtext as tkst
 import subprocess as sbp
 import threading as thd
 import queue as Queue
-import os
 from time import sleep
 
 class AsynchronousFileReader(thd.Thread):
@@ -127,25 +126,23 @@ class KCStreamDataApp():
         
         # ---------------------------------------------------------------------
         # Create the output window/Frame
-        Frm_Output = ttk.Frame(self.window, relief = tk.FLAT, padding=6)
+        Frm_Output = ttk.LabelFrame(self.window, relief = tk.FLAT, padding=6, text = "Progress Messages")
         Frm_Output.grid(row = 4, column = 1, padx=6, sticky=tk.E + tk.W + tk.N + tk.S)
         
-        lbl_Output = tk.Label(Frm_Output, text = "Progress")
-        lbl_Output.grid(row = 1, column = 1)
         
-        self.txt_Output = tkst.ScrolledText(Frm_Output, wrap = tk.WORD, width  = 50, height = 4)
-        self.txt_Output.grid(row = 2, column = 1, ipadx = 5, ipady = 5, padx = 10, pady = 10)
+        self.txt_Output = tkst.ScrolledText(Frm_Output, wrap = tk.WORD, width  = 70, height = 8, font = ('Calibri',12))
+        self.txt_Output.grid(row = 2, column = 1, ipadx = 10, ipady = 10, padx = 10, pady = 10)
         
-#        termf = tk.Frame(self.window) #, height=100, width=500)
-#        termf.grid(row = 4, column = 1)
-#        
-#        wid = termf.winfo_id()
-        
+        Frm_Output.rowconfigure(1, weight = 1)
+        Frm_Output.columnconfigure(1, weight = 1)
+        Frm_Output.columnconfigure(2, weight = 1)
+
+
         # ---------------------------------------------------------------------
         # Create the quit window button
         Frm_Quit = ttk.Frame(self.window, relief = tk.FLAT, padding = 6)
         Frm_Quit.grid(row=5, column = 1, padx=6, sticky=tk.E + tk.W + tk.N + tk.S)
-        
+                
         btn_QuitWin = ttk.Button(Frm_Quit, text = "Quit", command = self.QuitWin)
         btn_QuitWin.grid(row = 1, column = 1, pady = 10, ipadx = 7, ipady = 3, sticky=tk.E)
         
@@ -155,24 +152,55 @@ class KCStreamDataApp():
 
     def BtnPress_Temperature(self):
         """Only called for button to start the mungeStreamData.py script with the option "-t" """
-            
-        InputFiles = self.str_InputFiles.get()
-        OutputFiles = self.str_OutputFiles.get()
         
-        if len(InputFiles) == 0:
+        if len(self.str_InputFiles.get()) == 0:
            messagebox.showerror("Error", "Please choose a folder containing the input files")
            return
        
-        if len(OutputFiles) == 0:
+        if len(self.str_OutputFiles.get()) == 0:
            messagebox.showerror("Error", "Please choose a folder to deposit the output files")
            return
         
+        TemperatureOutput = thd.Thread(target = self.GetTemperatureOutput)
+        TemperatureOutput.start()
+
+        self.window.update_idletasks()  
         
-        if self.DoEOutputOpt == 1:
-            print('cmd /k python MungeStreamData.py -i "{}" -o "{}" -t -e'.format(InputFiles, OutputFiles))
+    
+    def GetTemperatureOutput(self):
+        """Starts the MungeStreamData.py script in a thread and dynamically returns standard output to the scrolled text widget"""
+        InputFiles = self.str_InputFiles.get()
+        OutputFiles = self.str_OutputFiles.get()
+        
+        if self.DoEOutputOpt.get() == 1:
+            DoE_Temperature = "-e"
         else:
-            print('cmd /k python MungeStreamData.py -i "{}" -o "{}" -t'.format(InputFiles, OutputFiles))
-       # os.system('cmd /k python MungeStreamData.py -i "{}" -o "{}" {}'.format(InputFiles, OutputFiles, option))
+           DoE_Temperature = ""
+        
+        proc_Temperature = sbp.Popen(['python', '-u', 'MungeStreamData.py', '-i', InputFiles, '-o', OutputFiles, '-t', DoE_Temperature],
+                                stdout = sbp.PIPE)
+        stdout_Queue = Queue.Queue()
+        stdout_Reader = AsynchronousFileReader(proc_Temperature.stdout, stdout_Queue)
+        stdout_Reader.start()
+        line = ""
+        
+        while not stdout_Reader.eof(): 
+            while not stdout_Queue.empty():
+                line = stdout_Queue.get()
+                if line == "<<Done!>>\r\n" or line == b'':
+                    break
+                self.txt_Output.insert(tk.INSERT, line.decode()+"\n")
+                self.txt_Output.see("end")
+                self.window.update_idletasks()
+                
+            if line == "<<Done!>>\r\n" or line == b'':
+                #print("breaking #2")
+                break
+            #print("sleeping")
+            sleep(0.1) #Sleep a bit before checking the readers            
+
+        print("Exiting CallOutput")
+    
     
     def BtnPress_Logger(self):
         """Only called for Logger button to start a thread in which the MungeStreamData.py script will be run"""
@@ -198,15 +226,10 @@ class KCStreamDataApp():
         
         if self.DoEOutputOpt.get() == 1:
             DoE_Logger = "-e"
-            #print('cmd /k python MungeStreamData.py -i "{}" -o "{}" -e'.format(InputFiles, OutputFiles))
         else:
            DoE_Logger = ""
-            #print('cmd /k python MungeStreamData.py -i "{}" -o "{}"'.format(InputFiles, OutputFiles))
         
-        myList = ['python', '-u', 'MungeStreamData.py', '-i ', InputFiles, '-o ', OutputFiles, DoE_Logger]
-        print(myList)       
-            
-        proc_Logger = sbp.Popen(['python', '-u', 'MungeStreamData.py', '-i', InputFiles, '-o ', OutputFiles, DoE_Logger],
+        proc_Logger = sbp.Popen(['python', '-u', 'MungeStreamData.py', '-i', InputFiles, '-o', OutputFiles, DoE_Logger],
                                 stdout = sbp.PIPE)
         stdout_Queue = Queue.Queue()
         stdout_Reader = AsynchronousFileReader(proc_Logger.stdout, stdout_Queue)
@@ -217,11 +240,9 @@ class KCStreamDataApp():
             while not stdout_Queue.empty():
                 line = stdout_Queue.get()
                 if line == "<<Done!>>\r\n" or line == b'':
-                    #print("breaking #1")
                     break
-                print(line.decode())
-                #self.txt_Output.insert(tk.INSERT, line.decode()+"\n")
-                #self.txt_Output.see("end")
+                self.txt_Output.insert(tk.INSERT, line.decode()+"\n")
+                self.txt_Output.see("end")
                 self.window.update_idletasks()
                 
             if line == "<<Done!>>\r\n" or line == b'':
@@ -232,7 +253,7 @@ class KCStreamDataApp():
 
         print("Exiting CallOutput")
 #        self.window.destroy()
-#        
+        
 #        print("The logger button was pressed")
 #        os.system('cmd /k python MungeStreamData.py -i "{}" -o "{}"'.format(InputFiles, OutputFiles))
 #        
@@ -257,41 +278,6 @@ class KCStreamDataApp():
         
         self.entry_OutputFiles.delete(0, tk.END)
         self.entry_OutputFiles.insert(0, filename)
-        
-#    def GetOutput(self):
-#        GetOutput = thd.Thread(target = self.CallOutput)
-#        GetOutput.start()
-#
-#        self.window.update_idletasks()        
-##        self.window.update_idletasks()
-#    
-#    def CallOutput(self):
-#        print("In CallOutput")
-#        
-#        proc = sbp.Popen(['python', '-u', 'Subprocess_test_Output.py'], stdout = sbp.PIPE)
-#        stdout_Queue = Queue.Queue()
-#        stdout_Reader = AsynchronousFileReader(proc.stdout, stdout_Queue)
-#        stdout_Reader.start()
-#        line = ""
-#        
-#        while not stdout_Reader.eof(): 
-#            while not stdout_Queue.empty():
-#                line = stdout_Queue.get()
-#                if line == "<<Done!>>\r\n" or line == b'':
-#                    #print("breaking #1")
-#                    break
-#                self.txt_Output.insert(tk.INSERT, line.decode()+"\n")
-#                self.txt_Output.see("end")
-#                self.window.update_idletasks()
-#                
-#            if line == "<<Done!>>\r\n" or line == b'':
-#                #print("breaking #2")
-#                break
-#            #print("sleeping")
-#            sleep(0.1) #Sleep a bit before checking the readers            
-#
-#        print("Exiting CallOutput")
-
         
     def QuitWin(self):
         """Closes the window when the 'Quit' button is pressed"""
