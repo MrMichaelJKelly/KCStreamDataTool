@@ -48,6 +48,7 @@ class KCStreamDataApp():
         self.window = tk.Tk()
         #self.window.configure(background = "SystemAppWorkspace")
         self.window.wm_title("KC Monitoring Data Processor")
+        self.window.iconbitmap("KC_GUI.ico")
         
         self.CreateWidgets()
         
@@ -66,7 +67,7 @@ class KCStreamDataApp():
         
         # ---------------------------------------------------------------------        
         # Create Frame for input/output file browse and entry boxes
-        Frm_InputOutput = ttk.Frame(self.window, relief=tk.RIDGE, padding=6)
+        Frm_InputOutput = ttk.LabelFrame(self.window, relief=tk.RIDGE, padding=6, text = "Choose Input/Output Folders")
         Frm_InputOutput.grid(row = 2, column = 1, padx=6, sticky=tk.E + tk.W + tk.N + tk.S)
         
         # Text control for where the input files are
@@ -100,8 +101,8 @@ class KCStreamDataApp():
         
         # ---------------------------------------------------------------------
         # Create Choices Frame with temperature, logger, and quit buttons
-        Frm_Choices = ttk.Frame(self.window, relief=tk.FLAT, padding=6)
-        Frm_Choices.grid(row = 3, column = 1, padx=6, sticky=tk.E + tk.W + tk.N + tk.S)
+        Frm_Choices = ttk.LabelFrame(self.window, relief=tk.FLAT, padding=6, text = "Choose Output Options")
+        Frm_Choices.grid(row = 3, column = 1, padx=6, pady = 10, sticky=tk.E + tk.W + tk.N + tk.S)
         
         # Buttons to choose temperature or logger data output
         btn_TemperatureData = ttk.Button(Frm_Choices, text = "Temperature", command = self.BtnPress_Temperature)
@@ -112,7 +113,7 @@ class KCStreamDataApp():
         
         #Create checkbutton for user to indicate if they want Ecology EIM-formatted files
         self.DoEOutputOpt = tk.IntVar()
-        chkbtn_DoEOutput = tk.Checkbutton(Frm_Choices, text = "Create Ecology EIM-formatted files", 
+        chkbtn_DoEOutput = ttk.Checkbutton(Frm_Choices, text = "Create Ecology EIM-formatted files", 
                                           variable = self.DoEOutputOpt) #, onvalue = "True", offvalue = "False")
         chkbtn_DoEOutput.grid(row = 1, column = 3, pady = 5, ipadx = 7, ipady = 3, sticky=tk.E)
 
@@ -129,9 +130,15 @@ class KCStreamDataApp():
         Frm_Output = ttk.LabelFrame(self.window, relief = tk.FLAT, padding=6, text = "Progress Messages")
         Frm_Output.grid(row = 4, column = 1, padx=6, sticky=tk.E + tk.W + tk.N + tk.S)
         
-        
+        # Use Tkinter Scrolled Text widget as output message window, start by inputting welcome message
+        # from text file
         self.txt_Output = tkst.ScrolledText(Frm_Output, wrap = tk.WORD, width  = 70, height = 8, font = ('Calibri',12))
         self.txt_Output.grid(row = 2, column = 1, ipadx = 10, ipady = 10, padx = 10, pady = 10)
+        
+        msg_Welcome = open("GUI_Welcome_Message.txt", "r")
+        for aline in msg_Welcome:
+            self.txt_Output.insert(tk.INSERT, aline)
+        msg_Welcome.close()
         
         Frm_Output.rowconfigure(1, weight = 1)
         Frm_Output.columnconfigure(1, weight = 1)
@@ -153,6 +160,7 @@ class KCStreamDataApp():
     def BtnPress_Temperature(self):
         """Only called for button to start the mungeStreamData.py script with the option "-t" """
         
+        # Checking to make sure the user has provided input/output file paths
         if len(self.str_InputFiles.get()) == 0:
            messagebox.showerror("Error", "Please choose a folder containing the input files")
            return
@@ -161,6 +169,8 @@ class KCStreamDataApp():
            messagebox.showerror("Error", "Please choose a folder to deposit the output files")
            return
         
+        # Start a thread of execution which calls the function that runs the script while allowing
+        # GUI mainloop to continue
         TemperatureOutput = thd.Thread(target = self.GetTemperatureOutput)
         TemperatureOutput.start()
 
@@ -168,7 +178,11 @@ class KCStreamDataApp():
         
     
     def GetTemperatureOutput(self):
-        """Starts the MungeStreamData.py script in a thread and dynamically returns standard output to the scrolled text widget"""
+        """Starts the MungeStreamData.py script in a thread (to process temperature logger data)
+        and dynamically returns standard output to the scrolled text widget"""
+        
+        self.txt_Output.delete(1.0, tk.END)
+        
         InputFiles = self.str_InputFiles.get()
         OutputFiles = self.str_OutputFiles.get()
         
@@ -177,20 +191,32 @@ class KCStreamDataApp():
         else:
            DoE_Temperature = ""
         
+        # Use the subprocess module to run the other script in the thread started by the Btn_Press,
+        # passing the input file path, the output file path, and the state of the DoE Output checkbutton
+        # Also, set the standard output of the MungeStreamData.py script to a pipe which can be read
+        # by the GUI. Furthermore, the "-u" option means the script will be run unbuffered, which makes
+        # it possible to read its output continuously in the GUI
         proc_Temperature = sbp.Popen(['python', '-u', 'MungeStreamData.py', '-i', InputFiles, '-o', OutputFiles, '-t', DoE_Temperature],
                                 stdout = sbp.PIPE)
+        # Create a queue for the standard output and read from it (this code from Stefan Lippens, see above)
         stdout_Queue = Queue.Queue()
         stdout_Reader = AsynchronousFileReader(proc_Temperature.stdout, stdout_Queue)
         stdout_Reader.start()
         line = ""
         
+        # Check the readers on two while conditions so that script output is read continuously until
+        # it finishes.
         while not stdout_Reader.eof(): 
             while not stdout_Queue.empty():
                 line = stdout_Queue.get()
+                # The End of File catch doesn't work from Lippens' code for some reason, so this
+                # is a hard-coded method to catch the end of the file and break the while loop
                 if line == "<<Done!>>\r\n" or line == b'':
                     break
+                # Insert script output into scrolled text widget for user to see. Decode method used
+                # because script output comes as a byte-array with weird characters added
                 self.txt_Output.insert(tk.INSERT, line.decode()+"\n")
-                self.txt_Output.see("end")
+                self.txt_Output.see("end")      # Keep the scrolled text window scrolled to the most recent output
                 self.window.update_idletasks()
                 
             if line == "<<Done!>>\r\n" or line == b'':
@@ -220,7 +246,9 @@ class KCStreamDataApp():
 
 
     def GetLoggerOutput(self):
-        """Starts the MungeStreamData.py script in a thread and dynamically returns standard output to the scrolled text widget"""
+        """Starts the MungeStreamData.py script in a thread (to process HI-9829 data) and dynamically returns standard output to the scrolled text widget"""
+        self.txt_Output.delete(1.0, tk.END)
+        
         InputFiles = self.str_InputFiles.get()
         OutputFiles = self.str_OutputFiles.get()
         
@@ -249,14 +277,8 @@ class KCStreamDataApp():
                 #print("breaking #2")
                 break
             #print("sleeping")
-            sleep(0.1) #Sleep a bit before checking the readers            
-
-        print("Exiting CallOutput")
-#        self.window.destroy()
-        
-#        print("The logger button was pressed")
-#        os.system('cmd /k python MungeStreamData.py -i "{}" -o "{}"'.format(InputFiles, OutputFiles))
-#        
+            sleep(0.1) #Sleep a bit before checking the readers
+            
         
     def BtnPress_BrowseInput(self):
         """Calls a file dialog box when the 'browse' button for the input files field is pressed"""
