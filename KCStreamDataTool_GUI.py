@@ -53,44 +53,55 @@ def BtnPress_Browse(entry_Name):
 
 global window, entry_InputFiles, entry_OutputFiles, wid
 window = tk.Tk()
+window.wm_title("KC Monitoring Data Processor")
 
-lbl_Title = tk.Label(window, text = "Kooskooskie Monitoring Data Processor")
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+# Input/Output Files Frame
+frm_IOFiles = tk.Frame(window, padx = 5, pady = 5, relief = tk.RIDGE)
+frm_IOFiles.grid(row = 1, column = 1, sticky = tk.E + tk.W + tk.N + tk.S)
+
+lbl_Title = tk.Label(frm_IOFiles, text = "Kooskooskie Monitoring Data Processor")
 lbl_Title.grid(row=1,column=2)
 
 # Text control for where the input files are
-lbl_InputFiles = tk.Label(window, text = "Input files")
+lbl_InputFiles = tk.Label(frm_IOFiles, text = "Input files")
 lbl_InputFiles.grid(row = 2, column = 1)
 
-entry_InputFiles = tk.Entry(window)
+entry_InputFiles = tk.Entry(frm_IOFiles)
 entry_InputFiles.grid(row = 2, column = 2)
 
 
 # Text control for where the output goes
-lbl_OutputFiles = tk.Label(window, text = "Output files")
+lbl_OutputFiles = tk.Label(frm_IOFiles, text = "Output files")
 lbl_OutputFiles.grid(row = 3, column = 1)
 
-entry_OutputFiles = tk.Entry(window)
+entry_OutputFiles = tk.Entry(frm_IOFiles)
 entry_OutputFiles.grid(row = 3, column = 2)
 
 
 # Buttons to call file browser dialog for input/output directories
-btn_BrowseInputDir = tk.Button(window, text = "Browse", command = lambda: BtnPress_Browse("entry_InputFiles"))
+btn_BrowseInputDir = tk.Button(frm_IOFiles, text = "Browse", command = lambda: BtnPress_Browse("entry_InputFiles"))
 btn_BrowseInputDir.grid(row = 2, column = 3)
 
-btn_BrowseOutputDir = tk.Button(window, text = "Browse", command = lambda: BtnPress_Browse("entry_OutputFiles"))
+btn_BrowseOutputDir = tk.Button(frm_IOFiles, text = "Browse", command = lambda: BtnPress_Browse("entry_OutputFiles"))
 btn_BrowseOutputDir.grid(row = 3, column = 3)
 
 
-# Buttons to choose temperature or logger data output
-btn_TemperatureData = tk.Button(window, text = "Temperature", command = lambda: BtnPress("Temperature"))
-btn_LoggerData = tk.Button(window, text = "Logger", command = lambda: BtnPress("Logger"))
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+# Temperature/Logger Output Choice Buttons Frame
+frm_OutputChoice = tk.Frame(window, relief = tk.RIDGE)
+frm_OutputChoice.grid(row = 2, column = 1, sticky=tk.E + tk.W + tk.N + tk.S)
 
-btn_TemperatureData.grid(row = 4,column = 1)
-btn_LoggerData.grid(row = 4, column = 3)
+# Buttons to choose temperature or logger data output
+btn_TemperatureData = tk.Button(frm_OutputChoice, text = "Temperature", command = lambda: BtnPress("Temperature"))
+btn_LoggerData = tk.Button(frm_OutputChoice, text = "Logger", command = lambda: BtnPress("Logger"))
+
+btn_TemperatureData.grid(row = 1,column = 1, sticky = tk.W)
+btn_LoggerData.grid(row = 1, column = 2, sticky = tk.E)
 
 # Create the output window
-termf = tk.Frame(window, height=100, width=500)
-termf.grid(row = 5, column = 2)
+termf = tk.Frame(frm_OutputChoice, height=100, width=500)
+termf.grid(row = 2, column = 2)
 
 wid = termf.winfo_id()
 

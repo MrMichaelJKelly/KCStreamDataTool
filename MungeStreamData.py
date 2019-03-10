@@ -183,16 +183,14 @@ outputCSVDoETemperatureHeaders = [
     'Start_Time',
     'End_Date',
     'End_Time',
-    'Result_Parameter_Name',    # DO = "Disolved Oxygen", Temperature = "Temperature, water"
+    'Parameter_Name',    # DO = "Disolved Oxygen", Temperature = "Temperature, water"
     'Result_Value',
     'Result_Unit',          # DO = mg/L, Temperature = deg C
     'Result_Data_Qualifier',
     'Result_Method',
     'Comment',
     'Groundwater_Result_Accuracy',
-    'Groundwater_Level_Measuring_Point_ID'
-    'Location_ID',
-    'Result_Taxon_Life_Stage'
+    'Groundwater_Level_Measuring_Point_ID',
 ]
 
 
