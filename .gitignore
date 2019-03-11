@@ -15,6 +15,7 @@ dist/
 downloads/
 eggs/
 .eggs/
+Exe_File/
 lib/
 lib64/
 parts/
@@ -101,3 +102,4 @@ ENV/
 .mypy_cache/
 
 xlrd_log_file.txt
+get-pip.py

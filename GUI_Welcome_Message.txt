@@ -1,0 +1,5 @@
+***This area will display progress messages while the program collects the raw data files and formats them.***
+
+To begin, select the folder which contains the raw data files (even if they are in sub-folders) in the "Input Files" box, and then select a folder where you want the formatted files to be placed in the "Output Files" box.
+
+Designed by Evan Romasco-Kelly and Mike Kelly (2018).
