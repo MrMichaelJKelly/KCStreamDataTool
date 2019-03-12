@@ -295,7 +295,7 @@ class KCStreamDataApp():
            DoE_Temperature = False
         
         try:
-            self.LoggerOutput = thd.Thread(target = FormatStreamData.FormatStreamData(OutputFiles, InputFiles, doTemperature, DoE_Temperature, self.Verbosity))
+            self.LoggerOutput = thd.Thread(target = FormatStreamData.FormatStreamData(OutputFiles, InputFiles, doTemperature, DoE_Temperature, self.Verbosity, self.StatusUpdate))
             self.LoggerOutput.daemon = True
             self.LoggerOutput.start()
             self.StatusUpdate("<< Working on it... >>", ClearText = True)
@@ -306,7 +306,8 @@ class KCStreamDataApp():
     
     
     def StatusUpdate(self, StatusString, ClearText=False):
-        """Gets the status strings from the FormatStreamData thread to update the GUI progress window"""
+        """Given status strings (e.g. from the FormatStreamData thread),
+            update the GUI progress window"""
         
         # Clear the textbox if needed
         if ClearText:

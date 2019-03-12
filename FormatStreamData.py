@@ -18,19 +18,12 @@ from pathlib import Path
 from xlrd import open_workbook, XLRDError, xldate
 import csv
 from collections import defaultdict
-#import xlrd
 
+# 
+# GLOBALS TO THIS FILE
+#
 
-#book = xlrd.open_workbook("myfile.xls")
-#print("The number of worksheets is {0}".format(book.nsheets))
-#print("Worksheet name(s): {0}".format(book.sheet_names()))
-#sh = book.sheet_by_index(0)
-#print("{0} {1} {2}".format(sh.name, sh.nrows, sh.ncols))
-#print("Cell D30 is {0}".format(sh.cell_value(rowx=29, colx=3)))
-#for rx in range(sh.nrows):
-#    print(sh.row(rx))
-
-# Files to exclude from if present
+# Files to exclude from list of processed files (if present)
 filesToExclude = ['.dropbox', 'desktop.ini' ]
 
 # Dictionary of sites encountered - to look for dupes - the value is a SiteData named tuple containing
@@ -44,6 +37,7 @@ sites = {}
 # numRecs - number of data records for the site
 SiteData = namedtuple('SiteMetadata', 'filePath, minDate, maxDate, numRecs')
 
+# True to enable verbose logging
 verbose = False
 
 # handle to output CSV files
@@ -52,7 +46,6 @@ outputCSVDoE = None         # Output for DoE logger data
 
 # Temperature data
 outputCSVDoETemperature = None
-
 
 # Standard data headers - some are in a slightly different format and have to be massaged a bit...
 columnHeaders = [ 'Date', 'Time', 'Temp.[C]', 'pH', 'mV [pH]', 'EC[uS/cm]', 'D.O.[%]', 'D.O.[ppm]', 'Turb.FNU', 'Remarks', 'Other' ]
@@ -470,14 +463,15 @@ def mapTemperatureSiteName(siteName):
 
 
 # Process one raw data temperature file 
-def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
+def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles, statusCallback):
     
     global sites, outputCSVSummary
     global DoEOutputOption
     nRows = 0           # Number rows written to output
     ret = True
     
-    print('\nProcessing '+rawDataFile)
+    if statusCallback:
+        statusCallback('\nProcessing '+rawDataFile)
     try:
         with open(rawDataFile) as csvfile:
             datarows = csv.reader(csvfile)
@@ -597,7 +591,7 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
 # LOGGER FILES
 #
 # Process the log files found
-def processLogFiles(outputLogFile, logFiles):
+def processLogFiles(outputLogFile, logFiles, statusCallback):
     global outputCSVSummary
     global outputCSVDoE
     global DoEOutputOption
@@ -621,7 +615,7 @@ def processLogFiles(outputLogFile, logFiles):
         # Process each data (log) file
         for file in logFiles:
             outputLogFile.write("=== %s ===\n" % file)
-            if not processLogFile(file, xlrdLogFile, medianCollector):
+            if not processLogFile(file, xlrdLogFile, medianCollector, statusCallback):
                 outputLogFile.write('Error processing %s\n' % file)
                 ret = False
     except Exception as e:
@@ -645,7 +639,7 @@ def processLogFiles(outputLogFile, logFiles):
 # with XLRD's use of LogFile as a output of errors, warnings, etc.)
 # the second parameter here is used for XLRD's log  messages
  
-def processLogFile(rawDataFile, xlrdLog, medianCollector):
+def processLogFile(rawDataFile, xlrdLog, medianCollector, statusCallback):
     
     global sites, outputCSVSummary
     nRows = 0           # Number rows written to output
@@ -653,7 +647,8 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
     latestDateSeen = datetime.date.min
     ret = True
     
-    print('processLogFile: Processing '+rawDataFile)
+    if statusCallback:
+        statusCallback('processLogFile: Processing '+rawDataFile)
     try:
         book = open_workbook(rawDataFile, logfile=xlrdLog)
     except XLRDError as e:
@@ -688,7 +683,8 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
     
     siteName = siteMap.get(siteName, siteName)
     
-    print ('Site name: '+siteName)
+    if statusCallback:
+        statusCallback('Site name: '+siteName)
 
     # Open the sheet and grab the data, copying it to the output CSV
     try:
@@ -830,7 +826,8 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
         print('Wrong # of sheets or first row of 2nd worksheet is not Date.. skipping')
         ret = False
        
-    print('%d data rows read.' % sheet.nrows)
+    if statusCallback:
+        statusCallback('%d data rows read.' % sheet.nrows)
         
     if ret:
         siteData = SiteData(rawDataFile, minDate=earliestDateSeen, maxDate=latestDateSeen, numRecs=nRows)
@@ -844,29 +841,9 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
 
     return ret
         
-#print("The number of worksheets is {0}".format(book.nsheets))
-#print("Worksheet name(s): {0}".format(book.sheet_names()))
-#sh = book.sheet_by_index(0)
-#print("{0} {1} {2}".format(sh.name, sh.nrows, sh.ncols))
-#print("Cell D30 is {0}".format(sh.cell_value(rowx=29, =3)))
-#for rx in range(sh.nrows):
+# Main function - called from GUI
+def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, Verbosity, StatusUpdate):
 
- 
-def helpMessage():
-      print('Usage:')
-      print('MungeStreamData.py [-t] [-h] [-v] [-e] [-o <outputFolder>] -i <inputFolder>')
-      print('Processes all data files under <inputFolder>; default is current directory')
-      print('Output goes to specified output folder, default is ProcessedStreamData')
-      print('Optional parameters:')
-      print('    -t   - process temperature data files, not logger files.  Without -t, logger files are processed.')
-      print('    -e   - output WA Department of Ecology EIM-formatted .csv files')
-      print('    -h   - print this help message')
-      print('    -v   - verbose output (for debugging the tool)')
-      sys.exit(2)
-
-
-def main(argv):
-   
    # Only supporting Windows for now...
     if (platform.system() != 'Windows'):
         print('Sorry, this script is supported only on Windows for now... bug Mike')
@@ -877,36 +854,13 @@ def main(argv):
     global outputCSVDoE
     global sites
     global DoEOutputOption
+
+    verbose = Verbosity
+    DoEOutputOption = DoE_Temperature
    
-   # Defaults for output folder, input folder and whether we are processing logger or
-   # temperature files
-    outputFolder = 'ProcessedStreamData'
-    inputFolder = '.'
-    doTemperature = False
-    DoEOutputOption = False
-
-    # Arguments
-    try:
-        opts, args = getopt.getopt(argv,"vhi:o:te",["verbose", "help", "input=", "help", "output=", "temp", "ecology"])
-    except getopt.GetoptError:
-        helpMessage()
-    for opt, arg in opts:
-        if opt in ("-h", "--help"):
-            helpMessage()
-        if opt in ("-v", "--verbose"):
-            verbose = True
-        elif opt in ("-o", "--output"):
-            outputFolder = arg
-        elif opt in ("-i", "--input"):
-            inputFolder = arg
-        elif opt in ("-t", "--temp"):
-            doTemperature = True
-        elif opt in ("-e", "--ecology"):
-            DoEOutputOption = True
-
     if inputFolder == '' or not os.path.isdir(inputFolder):
         print(inputFolder+' is not a folder containing data files.')
-        helpMessage()
+        return Empty
 
     # Open up log file        
     try:
@@ -914,7 +868,8 @@ def main(argv):
         outputLogFile = open(logPath, 'w')
     except IOError as e:
         print('Error opening '+logPath,': '+ str(e))
-        exit(-1)
+        return Empty
+
 
     if doTemperature:
         # For temperature data - we just emit per-site DoE summary files, not
@@ -925,10 +880,10 @@ def main(argv):
             outputCSVSummary = open(outputSummaryPath, 'w')
         except IOError as e:
             print('Error opening '+outputSummaryPath,': '+ str(e))
-            helpMessage()
+            return Empty
 
-        print('Processing Temperature file data in "'+ inputFolder+ '"...')
-        print('Writing to:\n'+outputSummaryPath+'\nand per-site DoE files named Xxxxx_Temperature_DoE.csv\n')
+        StatusUpdate('Processing Temperature file data in "'+ inputFolder+ '"...')
+        StatusUpdate('Writing to:\n'+outputSummaryPath+'\nand per-site DoE files named Xxxxx_Temperature_DoE.csv\n')
     else:
         # We emit two output files - Summary  which is an aggregated summary of all the data files
         # we read, and DoESummary which is for input to the DoE site in a format they prescribe.
@@ -939,32 +894,30 @@ def main(argv):
             try:
                 outputCSVDoE = open(outputDoESummaryPath, 'w')
             except IOError as e:
-                print('Error opening '+outputDoESummaryPath,': '+ str(e))
-                helpMessage()
+                StatusUpdate('Error opening '+outputDoESummaryPath,': '+ str(e))
+                return Empty
 
         try:
             outputCSVSummary = open(outputSummaryPath, 'w')
         except IOError as e:
-            print('Error opening '+outputSummaryPath,': '+ str(e))
-            helpMessage()
+            StatusUpdate('Error opening '+outputSummaryPath,': '+ str(e))
+            return Empty
     
-        print('Processing LOG file data in "'+ inputFolder+ '"...')
-        print('Writing to "'+ outputSummaryPath+ '"...')
+        StatusUpdate('Processing LOG file data in "'+ inputFolder+ '"...')
+        StatusUpdate('Writing to "'+ outputSummaryPath+ '"...')
    
     # Get list of files to process - either temperature or logger files
     files = collectFiles(inputFolder, outputFolder, doTemperature)
     
     if doTemperature:
-        processTemperatureFiles(files, outputLogFile, outputFolder)
+        processTemperatureFiles(files, outputLogFile, outputFolder, StatusUpdate)
     else:
-        if not processLogFiles(outputLogFile, files):
-            print("Something went wrong, check the error log\n")
+        if not processLogFiles(outputLogFile, files, StatusUpdate):
+            StatusUpdate("Something went wrong, check the error log\n")
         
     outputCSVSummary.close()
     outputLogFile.close()
 
-    print('<<Done!>>')
-    
     # Dump out collected per-site data
     if not doTemperature:
         for site in sites:
@@ -973,7 +926,7 @@ def main(argv):
                 print('\tData from %s to %s' % (str(item.minDate), str(item.maxDate)))
                 print('\t%d records from: %s' % (item.numRecs, item.filePath))
             print('-'*50)
-   
+    return "<<DONE>>"
 
 if __name__ == "__main__":
    main(sys.argv[1:])
