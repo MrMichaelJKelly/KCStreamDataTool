@@ -10,18 +10,19 @@ from collections import namedtuple
 import sys
 import datetime
 from dateutil.parser import parse
-import getopt
 import heapq
 import re
 import platform
-from pathlib import Path
 from xlrd import open_workbook, XLRDError, xldate
 import csv
 from collections import defaultdict
+from time import sleep
 
 # 
 # GLOBALS TO THIS FILE
 #
+
+DONE_MESSAGE = "<< DONE! >>"
 
 # Files to exclude from list of processed files (if present)
 filesToExclude = ['.dropbox', 'desktop.ini' ]
@@ -177,6 +178,8 @@ outputCSVDoETemperatureHeaders = [
 # Locate files to process - if doTemperature is True, doing temperature
 # files - otherwise LOG files
 def collectFiles(inputFolder, outputFolder, doTemp):
+    global verbose
+
     filesToRead = []
     # Regular expression to identify files we are interested in processing - for
     # Temperature data, it is CSV's; for log files, it is .XLS files
@@ -392,6 +395,7 @@ class MedianCollector(object):
 def processTemperatureFiles(temperatureFiles, logFile, outputFolder):
 
     global outputCSVSummary
+    global verbose
     
     ret = True      # optimistic
     
@@ -403,6 +407,8 @@ def processTemperatureFiles(temperatureFiles, logFile, outputFolder):
     try:    
         # Process each data (temperature) file
         for file in temperatureFiles:
+            if verbose:
+                print("=== %s ===\n" % file)
             logFile.write("=== %s ===\n" % file)
             if not processTemperatureFile(file, logFile, outputFolder, siteDataFiles):
                 ret = False
@@ -413,6 +419,8 @@ def processTemperatureFiles(temperatureFiles, logFile, outputFolder):
         for siteDataFile in siteDataFiles:
                 siteDataFiles[siteDataFile].close()
 
+    if verbose:
+        print("Exiting processTemperatureFiles")
 
     return ret
 
@@ -441,37 +449,37 @@ def mapTemperatureSiteName(siteName):
         'Yellowhawk_Plaza_Way' : 'YELPR',
         'Yellowhawk_Rupars' : 'YELRU',
         'Yellowhawk_Source_11-5-15_QAQC' : 'YELAC',
-		'Butcher_Mouth' : 'BUTMO',
-		'Butcher_source' : 'BUTSO',
-		'Butcher_Source' : 'BUTSO',
-		'Caldwell_Mouth' : 'CALDM',
-		'Garrison___Mouth' : 'GARMO',
-		'Garrison_Source' : 'GARRS',
-		'Lassiter_Mouth' : 'LASOM',
-		'Lassiter_Spring' : 'LASCB',
-		'Lincoln_mouth' : 'LINMO',
-		'Lincoln_mouth_air' : 'LINMO_Air',
-		'Lincoln_source' : 'LINSO',
-		'Titus_Mouth' : 'TITMO',
-		'Titus_mouth_air' : 'TITMO_Air',
-		'Yellowhawk_@_Rupar_(2)' : 'YELRU',
-		'YellowHawk_@_Rupar_11-5-15_QAQC' : 'YELRU',
-		'Yellowhawk_source' : 'YELAC',
-		'YellowhawkCreekPlazaWy_11-5-15_QAQC' : 'YELPR'        
+        'Butcher_Mouth' : 'BUTMO',
+        'Butcher_source' : 'BUTSO',
+        'Butcher_Source' : 'BUTSO',
+        'Caldwell_Mouth' : 'CALDM',
+        'Garrison___Mouth' : 'GARMO',
+        'Garrison_Source' : 'GARRS',
+        'Lassiter_Mouth' : 'LASOM',
+        'Lassiter_Spring' : 'LASCB',
+        'Lincoln_mouth' : 'LINMO',
+        'Lincoln_mouth_air' : 'LINMO_Air',
+        'Lincoln_source' : 'LINSO',
+        'Titus_Mouth' : 'TITMO',
+        'Titus_mouth_air' : 'TITMO_Air',
+        'Yellowhawk_@_Rupar_(2)' : 'YELRU',
+        'YellowHawk_@_Rupar_11-5-15_QAQC' : 'YELRU',
+        'Yellowhawk_source' : 'YELAC',
+        'YellowhawkCreekPlazaWy_11-5-15_QAQC' : 'YELPR'        
     }
     return temperatureSiteMap.get(siteName.replace(' ','_'), None)
 
 
 # Process one raw data temperature file 
-def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles, statusCallback):
+def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
     
     global sites, outputCSVSummary
     global DoEOutputOption
     nRows = 0           # Number rows written to output
     ret = True
     
-    if statusCallback:
-        statusCallback('\nProcessing '+rawDataFile)
+    statusCallback('\nProcessing '+rawDataFile)
+
     try:
         with open(rawDataFile) as csvfile:
             datarows = csv.reader(csvfile)
@@ -491,11 +499,10 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles, st
                         siteName = siteName[:-1]
                     # Use the mapping list to standardize sitenames
                     newSiteName = mapTemperatureSiteName(siteName)
-                    print ('Site name in data file {} => {}'.format(siteName,newSiteName))
+                    statusCallback ('Site name in data file {} => {}'.format(siteName,newSiteName))
                     if newSiteName is None:
-                        print('No mapping for site name, skipping file')
-                        logFile.write('No mapping for site name "{}", skipping file\n'.format(siteName))
-                        ret = False
+                        statusCallback('No mapping for site name, using name in raw data file')
+                        logFile.write('No mapping for site name "{}", using name in raw data\n'.format(siteName))
                     else:
                         siteName = newSiteName
                 else:
@@ -528,7 +535,7 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles, st
                         ret = False
                         
                     if not ret:
-                        print('CSV has non-standard format - skipping file')
+                        statusCallback('CSV has non-standard format - skipping file')
                         logFile.write('CSV has non-standard format - skipping file\n')
                     elif nRows > 1:
                         # Skip first two rows that are headers - emit data for rows 2... n
@@ -571,18 +578,19 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles, st
                             siteDataFiles[siteName].write(    'Yellowhawk,"%s","%s","%s",Measurement,NGO,,,,"Water","Fresh/Surface Water","%s","%s",,,"%s","%s","%s",,"TEMPLOGGER"\n' % (instrumentID, siteName, siteName, dt,tm,"Temperature, water",temp,"deg F"))
                         ret = True
                 nRows += 1
+               # sleep(0.5)
                 
                 # If encountered a format error - skip out
                 if not ret:
                     return ret
                 
     except csv.Error as e:
-        print('Error opening CSV file: %s\n' % (str(e)))
+        statusCallback('Error opening CSV file: %s\n' % (str(e)))
         logFile.write('Error opening CSV file {} (line {}): {}\n'.format(rawDataFile, datarows.line_num, e))
         ret = False
         
     if ret:
-        print('%d data rows read.' % nRows)
+        statusCallback('%d data rows read.' % nRows)
         logFile.write('%d data rows read.\n' % nRows)
         
     return ret
@@ -591,7 +599,7 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles, st
 # LOGGER FILES
 #
 # Process the log files found
-def processLogFiles(outputLogFile, logFiles, statusCallback):
+def processLogFiles(outputLogFile, logFiles):
     global outputCSVSummary
     global outputCSVDoE
     global DoEOutputOption
@@ -615,9 +623,10 @@ def processLogFiles(outputLogFile, logFiles, statusCallback):
         # Process each data (log) file
         for file in logFiles:
             outputLogFile.write("=== %s ===\n" % file)
-            if not processLogFile(file, xlrdLogFile, medianCollector, statusCallback):
+            if not processLogFile(file, xlrdLogFile, medianCollector):
                 outputLogFile.write('Error processing %s\n' % file)
                 ret = False
+            sleep(0.5)
     except Exception as e:
         outputLogFile.write("Error - %s\n", str(e))
         ret = False 
@@ -639,7 +648,7 @@ def processLogFiles(outputLogFile, logFiles, statusCallback):
 # with XLRD's use of LogFile as a output of errors, warnings, etc.)
 # the second parameter here is used for XLRD's log  messages
  
-def processLogFile(rawDataFile, xlrdLog, medianCollector, statusCallback):
+def processLogFile(rawDataFile, xlrdLog, medianCollector):
     
     global sites, outputCSVSummary
     nRows = 0           # Number rows written to output
@@ -652,7 +661,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector, statusCallback):
     try:
         book = open_workbook(rawDataFile, logfile=xlrdLog)
     except XLRDError as e:
-        print('Error opening workbook: %s\n' % (str(e)))
+        statusCallback('Error opening workbook: %s\n' % (str(e)))
         xlrdLog.write('Error opening workbook %s: %s\n' % (rawDataFile, str(e)))
         return False
     
@@ -662,11 +671,11 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector, statusCallback):
 
     # Some sanity checking - is the book in the expected format?
     if book.nsheets != 2 or not isinstance(siteName, str):
-        print('Workbook not in expected format')
+        statusCallback('Workbook not in expected format')
         xlrdLog.write('Workbook %s not in expected format\n' % (rawDataFile))
         return False
 
-    print ('Site name in data file: '+siteName)
+    statusCallback ('Site name in data file: '+siteName)
     
     # Map some sitenames together
     siteName = siteName.upper()
@@ -693,7 +702,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector, statusCallback):
             print('Sheets: ',book.sheet_names())
 
     except XLRDError as e:
-        print('Workbook does not have correct number of sheets')
+        statusCallback('Workbook does not have correct number of sheets')
         xlrdLog.write('Error getting data sheet for '+rawDataFile+' - Skipping Workbook for "'+siteName+'"\n')
         return False
 
@@ -729,7 +738,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector, statusCallback):
                 # and then written to columns 2, 3, 4 etc. - since 0 is the site name
                 # and 1 is the file name.  -1 means blank column (skip)
             colOrder = [0, 1, 2, 3, -1, 7, 4, 5, 6, 8]
-            print("This sheet has non-standard column ordering; adjusting columns to match standard.\n")
+            statusCallback("This sheet has non-standard column ordering; adjusting columns to match standard.\n")
         elif numColumns > 4 and sheet.cell(0, 4).ctype == 1 and sheet.cell(0, 4).value == 'mV[pH]':
             columnFormatModel = 0
             colOrder = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
@@ -737,7 +746,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector, statusCallback):
             columnFormatModel = 2
             colOrder = [0, 1, 2, 3, -1, 4, 5, 6, 7, 8]
         else:
-            print('Workbook has non-standard column headers - see columnFormatModel in processLogFile to address - skipping workbook')
+            statusCallback('Workbook has non-standard column headers - see columnFormatModel in processLogFile to address - skipping workbook')
             xlrdLog.write('Workbook has non-standard column headers - see columnFormatModel in processLogFile to address - Skipping Workbook for "'+siteName+'"\n')
             return False 
         
@@ -823,7 +832,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector, statusCallback):
             # After emitting all columns, terminate the line in the CSV file
             outputCSVSummary.write('\n')       # Terminate line
     else:
-        print('Wrong # of sheets or first row of 2nd worksheet is not Date.. skipping')
+        statusCallback('Wrong # of sheets or first row of 2nd worksheet is not Date.. skipping')
         ret = False
        
     if statusCallback:
@@ -833,42 +842,57 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector, statusCallback):
         siteData = SiteData(rawDataFile, minDate=earliestDateSeen, maxDate=latestDateSeen, numRecs=nRows)
         if siteName not in sites:
             # Not in list yet - add a tuple
-            print("This data is for a new site: " + siteName)
+            statusCallback("This data is for a new site: " + siteName)
             sites[siteName] = [ siteData ]
         else:
-            print("This is additional data for site: " + siteName)
+            statusCallback("This is additional data for site: " + siteName)
             sites[siteName].append(siteData)
 
     return ret
-        
-# Main function - called from GUI
-def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, Verbosity, StatusUpdate):
+ 
+def statusCallback(string):
+    """Puts status messages from this script into a queue which is threadsafe and is read by the GUI"""
+    
+    if messageQueue is not None:
+        messageQueue.put(string)
+    else:       # command line
+        print(string)
 
-   # Only supporting Windows for now...
-    if (platform.system() != 'Windows'):
-        print('Sorry, this script is supported only on Windows for now... bug Evan or Mike')
-        sys.exit(2)
+# Main entry point - called from GUI or from main below if run from the command line
+def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, Verbosity, msgQueue):
+    """This function is called by the GUI in a thread of execution to format the desired raw data files. User-selected
+    options on the GUI are passed here as parameters. TempOrHI9829 indicates whether HOBO data files or HI9829 LOG files
+    will be formatted (defualt is for HI9829 LOG files). EcologyOutput indicates whether or not this script should create
+    files formatted for the Department of Ecology EIM (default is not to create EIM files)."""
 
     global verbose
     global outputCSVSummary
     global outputCSVDoE
     global sites
     global DoEOutputOption
+    global messageQueue
+    
+    messageQueue = msgQueue
 
     verbose = Verbosity
     DoEOutputOption = DoE_Temperature
+    
+    # Only supporting Windows for now..
+    if (platform.system() != 'Windows'):
+        statusCallback('Sorry, this script is supported only on Windows for now... bug Mike')
+        sys.exit(2)
    
     if inputFolder == '' or not os.path.isdir(inputFolder):
-        print(inputFolder+' is not a folder containing data files.')
-        return Empty
+        statusCallback(inputFolder+' is not a folder containing data files.')
+        return None
 
     # Open up log file        
     try:
         logPath = os.path.join(outputFolder, "LogFile.txt")
         outputLogFile = open(logPath, 'w')
     except IOError as e:
-        print('Error opening '+logPath,': '+ str(e))
-        return Empty
+        statusCallback('Error opening '+logPath,': '+ str(e))
+        return None
 
 
     if doTemperature:
@@ -879,11 +903,11 @@ def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, 
         try:
             outputCSVSummary = open(outputSummaryPath, 'w')
         except IOError as e:
-            print('Error opening '+outputSummaryPath,': '+ str(e))
-            return Empty
+            statusCallback('Error opening '+outputSummaryPath,': ')
+            raise
 
-        StatusUpdate('Processing Temperature file data in "'+ inputFolder+ '"...')
-        StatusUpdate('Writing to:\n'+outputSummaryPath+'\nand per-site DoE files named Xxxxx_Temperature_DoE.csv\n')
+        statusCallback('Processing Temperature file data in "'+ inputFolder+ '"...')
+        statusCallback('Writing to:\n'+outputSummaryPath+'\nand per-site DoE files named Xxxxx_Temperature_DoE.csv\n')
     else:
         # We emit two output files - Summary  which is an aggregated summary of all the data files
         # we read, and DoESummary which is for input to the DoE site in a format they prescribe.
@@ -894,26 +918,30 @@ def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, 
             try:
                 outputCSVDoE = open(outputDoESummaryPath, 'w')
             except IOError as e:
-                StatusUpdate('Error opening '+outputDoESummaryPath,': '+ str(e))
-                return Empty
+                statusCallback('Error opening '+outputDoESummaryPath,': ')
+                raise
 
         try:
             outputCSVSummary = open(outputSummaryPath, 'w')
         except IOError as e:
-            StatusUpdate('Error opening '+outputSummaryPath,': '+ str(e))
-            return Empty
+            statusCallback('Error opening '+outputSummaryPath,': ')
+            raise
     
-        StatusUpdate('Processing LOG file data in "'+ inputFolder+ '"...')
-        StatusUpdate('Writing to "'+ outputSummaryPath+ '"...')
+        statusCallback('Processing LOG file data in "'+ inputFolder+ '"...')
+        statusCallback('Writing to "'+ outputSummaryPath+ '"...')
    
     # Get list of files to process - either temperature or logger files
     files = collectFiles(inputFolder, outputFolder, doTemperature)
+
+    if verbose:
+        print('Back from collectFiles')
+
     
     if doTemperature:
-        processTemperatureFiles(files, outputLogFile, outputFolder, StatusUpdate)
+        processTemperatureFiles(files, outputLogFile, outputFolder)
     else:
-        if not processLogFiles(outputLogFile, files, StatusUpdate):
-            StatusUpdate("Something went wrong, check the error log\n")
+        if not processLogFiles(outputLogFile, files):
+            statusCallback("Something went wrong, check the error log\n")
         
     outputCSVSummary.close()
     outputLogFile.close()
@@ -921,7 +949,7 @@ def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, 
     # Dump out collected per-site data
     if not doTemperature:
         for site in sites:
-            print('For "' + site +'"')
+            statusCallback('For "' + site +'"')
             for item in sites[site]:
                 print('\tData from %s to %s' % (str(item.minDate), str(item.maxDate)))
                 print('\t%d records from: %s' % (item.numRecs, item.filePath))
