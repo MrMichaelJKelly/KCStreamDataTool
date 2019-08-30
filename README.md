@@ -67,3 +67,7 @@ Make sure this both are installed for Python 3 on your machine:
 -h			Help - print an explanation of these command line options
 
 
+# Debugging Notes
+
+08/30/2019 - changed the HOBO logger site mapping so that if a file comes in with a name that is not in the mapping, it is assumed that the name is already correct, so it uses the file name in the data file.
+

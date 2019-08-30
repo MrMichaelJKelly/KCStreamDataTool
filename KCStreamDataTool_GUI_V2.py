@@ -6,6 +6,7 @@ Created on Tue Apr 10 21:25:38 2018
 GUI for KC Stream Data Tool (script written by Mike Kelly)
 
 09/23/2018: Version 1.0 created, note: "Logger" refers to HI-9829 data and "Temperature" refers to HOBO Datalogger data
+08/30/2019: Version 1.1, changed the HOBO logger site mapping in FormatStreamData so that if a file comes in with a name that is not in the mapping, it is assumed that the name is already correct, so it uses the file name in the data file.
 
 """
 
@@ -16,6 +17,7 @@ import tkinter.scrolledtext as tkst
 import threading as thd
 import FormatStreamData
 import os
+import queue
 
 
 class KCStreamDataApp():
@@ -26,7 +28,7 @@ class KCStreamDataApp():
         self.window.wm_title("KC Monitoring Data Formatter")
         self.window.iconbitmap("KC_GUI.ico")
         
-        self.Verbosity = False
+        self.Verbosity = True
         
         self.CreateWidgets()
         
@@ -173,10 +175,29 @@ class KCStreamDataApp():
            DoE_Temperature = False
         
         try:
+            
+            StatusQ = queue.Queue()
+            
             self.StatusUpdate("<< Working on it... >>", ClearText = True)
-            self.LoggerOutput = thd.Thread(target = FormatStreamData.FormatStreamData(OutputFiles, InputFiles, doTemperature, DoE_Temperature, self.Verbosity, self.StatusUpdate))
+            self.LoggerOutput = thd.Thread(target = FormatStreamData.FormatStreamData(OutputFiles, InputFiles, doTemperature, DoE_Temperature, self.Verbosity, StatusQ))
             self.LoggerOutput.daemon = True
             self.LoggerOutput.start()
+            
+            # Creating queue for status updates from FormatStreamData to be placed which can then be read by GUI
+            while True:
+                self.window.update_idletasks()
+                # This will block the GUI thread from running until there is something to take from the Queue
+                try:
+                    item = str(StatusQ.get(block = True, timeout = 1))
+                    print("popped off the queue %s" % item)
+                    self.StatusUpdate(item)
+                    if item == FormatStreamData.DONE_MESSAGE:
+                        break
+                    
+                except queue.Empty:
+                    pass
+            
+            print("Done with the queue")
             self.window.update_idletasks()
         except Exception as e:
             self.StatusUpdate("\n"+str(e))
@@ -187,14 +208,14 @@ class KCStreamDataApp():
     def StatusUpdate(self, StatusString, ClearText=False):
         """Given status strings (e.g. from the FormatStreamData thread),
             update the GUI progress window"""
-        
+        print("in status update")
         # Clear the textbox if needed
         if ClearText:
             self.txt_Output.delete(1.0, tk.END)
             
         self.txt_Output.insert(tk.INSERT, str(StatusString)+"\n")
         self.txt_Output.see("end")      # Keep the scrolled text window scrolled to the most recent output
-        self.window.update_idletasks()
+        self.window.update_idletasks()        
         
         
     def BtnPress_BrowseInput(self):

@@ -887,19 +887,19 @@ def main(argv):
     outputFolder = 'ProcessedStreamData'
     inputFolder = '.'
     doTemperature = False
-<<<<<<< HEAD
+# <<<<<<< HEAD
     DoEOutputOption = False
-=======
+# =======
     doDoE = False
->>>>>>> ccdd2b62ec85c3f6fc097ccd6f664b5f44711890
+# >>>>>>> ccdd2b62ec85c3f6fc097ccd6f664b5f44711890
 
     # Arguments passed on command line are in the "argv" list
     try:
-<<<<<<< HEAD
+# <<<<<<< HEAD
         opts, args = getopt.getopt(argv,"vhi:o:te",["verbose", "help", "input=", "help", "output=", "temp", "ecology"])
-=======
+# =======
         opts, args = getopt.getopt(argv,"vhi:o:te",["verbose", "help", "input=", "help", "output=", "temp","dodoe"])
->>>>>>> ccdd2b62ec85c3f6fc097ccd6f664b5f44711890
+# >>>>>>> ccdd2b62ec85c3f6fc097ccd6f664b5f44711890
     except getopt.GetoptError:
         helpMessage()
     for opt, arg in opts:
@@ -913,13 +913,13 @@ def main(argv):
             inputFolder = arg
         elif opt in ("-t", "--temp"):
             doTemperature = True
-<<<<<<< HEAD
+# <<<<<<< HEAD
         elif opt in ("-e", "--ecology"):
             DoEOutputOption = True
-=======
+# =======
         elif opt in ("-e", "--dodoe"):
             doDoE = True
->>>>>>> ccdd2b62ec85c3f6fc097ccd6f664b5f44711890
+# >>>>>>> ccdd2b62ec85c3f6fc097ccd6f664b5f44711890
 
     if inputFolder == '' or not os.path.isdir(inputFolder):
         print(inputFolder+' is not a folder containing data files.')

@@ -103,3 +103,6 @@ ENV/
 
 xlrd_log_file.txt
 get-pip.py
+ProcessedStreamData/
+KCStreamDataTool_V1.0.zip
+KCStreamDataTool_V1.0/

@@ -16,10 +16,13 @@ import platform
 from xlrd import open_workbook, XLRDError, xldate
 import csv
 from collections import defaultdict
+from time import sleep
 
 # 
 # GLOBALS TO THIS FILE
 #
+
+DONE_MESSAGE = "<< DONE! >>"
 
 # Files to exclude from list of processed files (if present)
 filesToExclude = ['.dropbox', 'desktop.ini' ]
@@ -175,6 +178,8 @@ outputCSVDoETemperatureHeaders = [
 # Locate files to process - if doTemperature is True, doing temperature
 # files - otherwise LOG files
 def collectFiles(inputFolder, outputFolder, doTemp):
+    global verbose
+
     filesToRead = []
     # Regular expression to identify files we are interested in processing - for
     # Temperature data, it is CSV's; for log files, it is .XLS files
@@ -387,9 +392,10 @@ class MedianCollector(object):
 #
 # Site,"Date Time, GMT-07:00","DO conc, mg/L","Temp, DegF","Source File"
 #
-def processTemperatureFiles(temperatureFiles, logFile, outputFolder, statusCallback):
+def processTemperatureFiles(temperatureFiles, logFile, outputFolder):
 
     global outputCSVSummary
+    global verbose
     
     ret = True      # optimistic
     
@@ -401,8 +407,10 @@ def processTemperatureFiles(temperatureFiles, logFile, outputFolder, statusCallb
     try:    
         # Process each data (temperature) file
         for file in temperatureFiles:
+            if verbose:
+                print("=== %s ===\n" % file)
             logFile.write("=== %s ===\n" % file)
-            if not processTemperatureFile(file, logFile, outputFolder, siteDataFiles, statusCallback):
+            if not processTemperatureFile(file, logFile, outputFolder, siteDataFiles):
                 ret = False
 
     finally:
@@ -411,6 +419,8 @@ def processTemperatureFiles(temperatureFiles, logFile, outputFolder, statusCallb
         for siteDataFile in siteDataFiles:
                 siteDataFiles[siteDataFile].close()
 
+    if verbose:
+        print("Exiting processTemperatureFiles")
 
     return ret
 
@@ -461,15 +471,15 @@ def mapTemperatureSiteName(siteName):
 
 
 # Process one raw data temperature file 
-def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles, statusCallback):
+def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
     
     global sites, outputCSVSummary
     global DoEOutputOption
     nRows = 0           # Number rows written to output
     ret = True
     
-    if statusCallback:
-        statusCallback('\nProcessing '+rawDataFile)
+    statusCallback('\nProcessing '+rawDataFile)
+
     try:
         with open(rawDataFile) as csvfile:
             datarows = csv.reader(csvfile)
@@ -491,9 +501,8 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles, st
                     newSiteName = mapTemperatureSiteName(siteName)
                     statusCallback ('Site name in data file {} => {}'.format(siteName,newSiteName))
                     if newSiteName is None:
-                        statusCallback('No mapping for site name, skipping file')
-                        logFile.write('No mapping for site name "{}", skipping file\n'.format(siteName))
-                        ret = False
+                        statusCallback('No mapping for site name, using name in raw data file')
+                        logFile.write('No mapping for site name "{}", using name in raw data\n'.format(siteName))
                     else:
                         siteName = newSiteName
                 else:
@@ -569,6 +578,7 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles, st
                             siteDataFiles[siteName].write(    'Yellowhawk,"%s","%s","%s",Measurement,NGO,,,,"Water","Fresh/Surface Water","%s","%s",,,"%s","%s","%s",,"TEMPLOGGER"\n' % (instrumentID, siteName, siteName, dt,tm,"Temperature, water",temp,"deg F"))
                         ret = True
                 nRows += 1
+               # sleep(0.5)
                 
                 # If encountered a format error - skip out
                 if not ret:
@@ -589,7 +599,7 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles, st
 # LOGGER FILES
 #
 # Process the log files found
-def processLogFiles(outputLogFile, logFiles, statusCallback):
+def processLogFiles(outputLogFile, logFiles):
     global outputCSVSummary
     global outputCSVDoE
     global DoEOutputOption
@@ -613,9 +623,10 @@ def processLogFiles(outputLogFile, logFiles, statusCallback):
         # Process each data (log) file
         for file in logFiles:
             outputLogFile.write("=== %s ===\n" % file)
-            if not processLogFile(file, xlrdLogFile, medianCollector, statusCallback):
+            if not processLogFile(file, xlrdLogFile, medianCollector):
                 outputLogFile.write('Error processing %s\n' % file)
                 ret = False
+            sleep(0.5)
     except Exception as e:
         outputLogFile.write("Error - %s\n", str(e))
         ret = False 
@@ -637,7 +648,7 @@ def processLogFiles(outputLogFile, logFiles, statusCallback):
 # with XLRD's use of LogFile as a output of errors, warnings, etc.)
 # the second parameter here is used for XLRD's log  messages
  
-def processLogFile(rawDataFile, xlrdLog, medianCollector, statusCallback):
+def processLogFile(rawDataFile, xlrdLog, medianCollector):
     
     global sites, outputCSVSummary
     nRows = 0           # Number rows written to output
@@ -838,27 +849,38 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector, statusCallback):
             sites[siteName].append(siteData)
 
     return ret
-        
+ 
+def statusCallback(string):
+    """Puts status messages from this script into a queue which is threadsafe and is read by the GUI"""
+    
+    if messageQueue is not None:
+        messageQueue.put(string)
+
+       
 # Main function - called from GUI
-def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, Verbosity, statusCallback):
+def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, Verbosity, msgQueue):
     """This function is called by the GUI in a thread of execution to format the desired raw data files. User-selected
     options on the GUI are passed here as parameters. TempOrHI9829 indicates whether HOBO data files or HI9829 LOG files
     will be formatted (defualt is for HI9829 LOG files). EcologyOutput indicates whether or not this script should create
     files formatted for the Department of Ecology EIM (default is not to create EIM files)."""
     #print(outputFolder, inputFolder, str(), str(EcologyOutput))
-   # Only supporting Windows for now...
-    if (platform.system() != 'Windows'):
-        statusCallback('Sorry, this script is supported only on Windows for now... bug Mike')
-        sys.exit(2)
 
     global verbose
     global outputCSVSummary
     global outputCSVDoE
     global sites
     global DoEOutputOption
+    global messageQueue
+    
+    messageQueue = msgQueue
 
     verbose = Verbosity
     DoEOutputOption = DoE_Temperature
+    
+    # Only supporting Windows for now..
+    if (platform.system() != 'Windows'):
+        statusCallback('Sorry, this script is supported only on Windows for now... bug Mike')
+        sys.exit(2)
    
     if inputFolder == '' or not os.path.isdir(inputFolder):
         statusCallback(inputFolder+' is not a folder containing data files.')
@@ -910,11 +932,15 @@ def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, 
    
     # Get list of files to process - either temperature or logger files
     files = collectFiles(inputFolder, outputFolder, doTemperature)
+
+    if verbose:
+        print('Back from collectFiles')
+
     
     if doTemperature:
-        processTemperatureFiles(files, outputLogFile, outputFolder, statusCallback)
+        processTemperatureFiles(files, outputLogFile, outputFolder)
     else:
-        if not processLogFiles(outputLogFile, files, statusCallback):
+        if not processLogFiles(outputLogFile, files):
             statusCallback("Something went wrong, check the error log\n")
         
     outputCSVSummary.close()
@@ -928,8 +954,15 @@ def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, 
                 statusCallback('\tData from %s to %s' % (str(item.minDate), str(item.maxDate)))
                 statusCallback('\t%d records from: %s' % (item.numRecs, item.filePath))
             statusCallback('-'*50)
-    statusCallback("<< DONE! >>")
+    statusCallback(DONE_MESSAGE)
 
-if __name__ == "__main__":
-   main(sys.argv[1:])
-   quit()
+def main():
+    FormatStreamData("C:\\Users\\Evan Romasco-Kelly\\OneDrive\\Documents\\Kooskooskie Commons\\WADOE Reporting\\EIM\\8-29-19_EIM_Upload\\EIM_CSVs", #OutputFolder 
+    "C:\\Users\\Evan Romasco-Kelly\\OneDrive\\Documents\\Kooskooskie Commons\\WADOE Reporting\\EIM\\8-29-19_EIM_Upload\\Raw_CSVs", #InputFolder
+    True, #doTemperature
+    True, #DoE_Temperature
+    True, #Verbosity
+    None #msgQueue
+    )
+
+main()
