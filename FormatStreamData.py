@@ -846,7 +846,7 @@ def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, 
 
    # Only supporting Windows for now...
     if (platform.system() != 'Windows'):
-        print('Sorry, this script is supported only on Windows for now... bug Mike')
+        print('Sorry, this script is supported only on Windows for now... bug Evan or Mike')
         sys.exit(2)
 
     global verbose
@@ -927,6 +927,54 @@ def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, 
                 print('\t%d records from: %s' % (item.numRecs, item.filePath))
             print('-'*50)
     return "<<DONE>>"
+
+def helpMessage():
+    print('Usage:')
+    print('FormatStreamData.py [-t] [-h] [-v] [-e] [-o <outputFolder>] -i <inputFolder>')
+    print('Processes all data files under <inputFolder>; default is current directory')
+    print('Output goes to specified output folder, default is ProcessedStreamData')
+    print('Optional parameters:')
+    print('    -t   - process temperature data files, not logger files.  Without -t, logger files are processed.')
+    print('    -e   - output WA Department of Ecology EIM-formatted .csv files')
+    print('    -h   - print this help message')
+    print('    -v   - verbose output (for debugging the tool)')
+    sys.exit(2)
+
+
+def main(argv):
+   
+   # Only supporting Windows for now...
+    if (platform.system() != 'Windows'):
+        print('Sorry, this script is supported only on Windows for now... bug Evan')
+        sys.exit(2)
+
+    # Defaults for output folder, input folder and whether we are processing logger or
+    # temperature files
+    outputFolder = 'ProcessedStreamData'
+    inputFolder = '.'
+    doTemperature = False
+    DoEOutputOption = False
+
+    # Arguments passed on command line are in the "argv" list
+    try:
+        opts, args = getopt.getopt(argv,"vhi:o:te",["verbose", "help", "input=", "help", "output=", "temp", "ecology"])
+    except getopt.GetoptError:
+        helpMessage()
+    for opt, arg in opts:
+        if opt in ("-h", "--help"):
+            helpMessage()
+        if opt in ("-v", "--verbose"):
+            verbose = True
+        elif opt in ("-o", "--output"):
+            outputFolder = arg
+        elif opt in ("-i", "--input"):
+            inputFolder = arg
+        elif opt in ("-t", "--temp"):
+            doTemperature = True
+        elif opt in ("-e", "--ecology"):
+            DoEOutputOption = True
+
+    FormatStreamData(outputFolder, inputFolder, doTemperature, DoEOutputOption, verbose, None)
 
 if __name__ == "__main__":
    main(sys.argv[1:])

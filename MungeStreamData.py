@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 #
+#  NOTE THIS SCRIPT IS OBSOLETE - it has been replaced by FormatStreamData.py
+#
 # Script to read a bunch of data files with measurements from
 # streams and consolidate them, standardize format, eliminate
 # duplicate data readings, etc.
@@ -887,11 +889,7 @@ def main(argv):
     outputFolder = 'ProcessedStreamData'
     inputFolder = '.'
     doTemperature = False
-<<<<<<< HEAD
     DoEOutputOption = False
-=======
-    doDoE = False
->>>>>>> ccdd2b62ec85c3f6fc097ccd6f664b5f44711890
 
     # Arguments passed on command line are in the "argv" list
     try:
