@@ -18,7 +18,7 @@ import platform
 from xlrd import open_workbook, XLRDError, xldate
 import csv
 from collections import defaultdict
-from time import sleep
+import time
 
 # 
 # GLOBALS TO THIS FILE
@@ -42,6 +42,9 @@ SiteData = namedtuple('SiteMetadata', 'filePath, minDate, maxDate, numRecs')
 
 # True to enable verbose logging
 verbose = False
+
+# queue for messages
+messageQueue = None
 
 # handle to output CSV files
 outputCSVSummary = None     # Data summary by site, with median values
@@ -196,14 +199,14 @@ def collectFiles(inputFolder, outputFolder, doTemp):
                 # Check if this file matches the pattern for a log file to
                 # process
                 if verbose:
-                    print("Checking "+os.path.join(subdir,file))
+                    statusCallback("Checking "+os.path.join(subdir,file))
                 m = re.match( logFilePattern, file)
                 if m:
                     if verbose:
-                        print('Adding '+os.path.join(subdir, file))
+                        statusCallback('Adding '+os.path.join(subdir, file))
                     filesToRead.append(os.path.join(subdir, file))
                 elif verbose:
-                        print('Skipping '+os.path.join(subdir, file))
+                        statusCallback('Skipping '+os.path.join(subdir, file))
                     
     return filesToRead
 
@@ -303,7 +306,7 @@ class SiteItemMeasurements(object):
         # these to eventually find the median.
         self.medianFinders[dt].addNum(val)
         if verbose:
-            print('recordValue: recorded %f for %s at %s' % (val, dt, tm))
+            statusCallback('recordValue: recorded %f for %s at %s' % (val, dt, tm))
     
     # Calculate the medians for each date by enumerating the
     # dates for which values have been recorded and using the
@@ -335,7 +338,7 @@ class SiteItemTempMeasurements(object):
         global verbose
         self.values[dt][tm] = val
         if verbose:
-            print('recordValue: recorded %f for %s at %s' % (val, dt, tm))
+            statusCallback('recordValue: recorded %f for %s at %s' % (val, dt, tm))
 
 
 # This list consists of MedianValue objects that record values per-site, per-date for each item marked
@@ -347,7 +350,7 @@ class MedianCollector(object):
     def addMeasurement(self, site, dt, tm, item, val):
         global verbose
         if verbose:
-            print('Recording %s as %f' % (item, val))
+            statusCallback('Recording %s as %f' % (item, val))
         if site not in self.siteMeasurementValues:      # first time we are seeing this site
             self.siteMeasurementValues[site] = {}
         if item not in self.siteMeasurementValues[site]:    # first time for this measurement
@@ -410,7 +413,7 @@ def processTemperatureFiles(temperatureFiles, logFile, outputFolder):
         # Process each data (temperature) file
         for file in temperatureFiles:
             if verbose:
-                print("=== %s ===\n" % file)
+                statusCallback("=== %s ===\n" % file)
             logFile.write("=== %s ===\n" % file)
             if not processTemperatureFile(file, logFile, outputFolder, siteDataFiles):
                 ret = False
@@ -422,7 +425,7 @@ def processTemperatureFiles(temperatureFiles, logFile, outputFolder):
                 siteDataFiles[siteDataFile].close()
 
     if verbose:
-        print("Exiting processTemperatureFiles")
+        statusCallback("Exiting processTemperatureFiles")
 
     return ret
 
@@ -584,7 +587,7 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
                             siteDataFiles[siteName].write(    'Yellowhawk,"%s","%s","%s",Measurement,NGO,,,,"Water","Fresh/Surface Water","%s","%s",,,"%s","%s","%s",,"TEMPLOGGER"\n' % (instrumentID, siteName, siteName, dt,tm,"Temperature, water",temp,"deg F"))
                         ret = True
                 nRows += 1
-               # sleep(0.5)     # debugging kludge
+                time.sleep(0)     # yield
                 
                 # If encountered a format error - skip out
                 if not ret:
@@ -705,7 +708,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
     try:
         dataSheet = book.sheet_by_index(1)
         if verbose:
-            print('Sheets: ',book.sheet_names())
+            statusCallback('Sheets: ',book.sheet_names())
 
     except XLRDError as e:
         statusCallback('Workbook does not have correct number of sheets')
@@ -760,8 +763,8 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
 
         for rowIndex in range(1, sheet.nrows):    # Iterate through data rows
             if verbose:
-                print ('-'*40)
-                print ('Row: %s' % rowIndex)   # Print row number
+                statusCallback ('-'*40)
+                statusCallback ('Row: %s' % rowIndex)   # Print row number
             # Skip entirely blank rows
             rowIsBlank = True
             for columnIndex in range(1, sheet.ncols):  # Iterate through columns
@@ -771,7 +774,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                     
             if rowIsBlank:
                 if verbose:
-                    print('Skipping blank row')
+                    statusCallback('Skipping blank row')
                 continue
             else:
                 nRows += 1              
@@ -795,7 +798,7 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
                         outputCSVSummary.write(siteName+','+rawDataFile+',')
                         
                     if verbose:
-                        print ('Column: [%s] is [%s] : [%s]' % (columnIndex, cellType, cellValue))
+                        statusCallback ('Column: [%s] is [%s] : [%s]' % (columnIndex, cellType, cellValue))
                         
                     # Somewhere these numeric values have to be defined, right?
                     # 3 == date per https://pythonhosted.org/xlrd3/cell.html - but there are two
@@ -859,6 +862,8 @@ def processLogFile(rawDataFile, xlrdLog, medianCollector):
 def statusCallback(string):
     """Puts status messages from this script into a queue which is threadsafe and is read by the GUI"""
     
+    global messageQueue
+
     if messageQueue is not None:
         messageQueue.put(string)
     else:       # command line
@@ -940,7 +945,7 @@ def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, 
     files = collectFiles(inputFolder, outputFolder, doTemperature)
 
     if verbose:
-        print('Back from collectFiles')
+        statusCallback('Back from collectFiles')
 
     
     if doTemperature:
@@ -957,9 +962,10 @@ def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, 
         for site in sites:
             statusCallback('For "' + site +'"')
             for item in sites[site]:
-                print('\tData from %s to %s' % (str(item.minDate), str(item.maxDate)))
-                print('\t%d records from: %s' % (item.numRecs, item.filePath))
-            print('-'*50)
+                statusCallback('\tData from %s to %s' % (str(item.minDate), str(item.maxDate)))
+                statusCallback('\t%d records from: %s' % (item.numRecs, item.filePath))
+            statusCallback('-'*50)
+    statusCallback(DONE_MESSAGE)
     return "<<DONE>>"
 
 def helpMessage():

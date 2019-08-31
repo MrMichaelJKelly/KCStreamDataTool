@@ -102,12 +102,18 @@ class KCStreamDataApp():
                                           variable = self.DoEOutputOpt) #, onvalue = "True", offvalue = "False")
         chkbtn_DoEOutput.grid(row = 1, column = 3, pady = 5, ipadx = 7, ipady = 3, sticky=tk.E)
 
+        #Create checkbutton for debug output
+        self.Verbose = tk.IntVar()
+        chkbtn_Verbose = ttk.Checkbutton(Frm_Choices, text = "Debug Output", 
+                                          variable = self.Verbose) #, onvalue = "True", offvalue = "False")
+        chkbtn_Verbose.grid(row = 2, column = 3, pady = 5, ipadx = 7, ipady = 3, sticky=tk.E)
         
         #Rows and Columns configurations (deals with resizing window)
         Frm_Choices.rowconfigure(1, weight = 1)
         Frm_Choices.columnconfigure(1, weight = 1)
         Frm_Choices.columnconfigure(2, weight = 1)
         Frm_Choices.columnconfigure(3, weight = 1)
+        Frm_Choices.rowconfigure(2, weight = 1)
         
         
         # ---------------------------------------------------------------------
@@ -173,13 +179,18 @@ class KCStreamDataApp():
             DoE_Temperature = True
         else:
            DoE_Temperature = False
-        
+
+        if self.Verbose.get() == 1:
+            self.Verbosity = True
+        else:
+           self.Verbosity = False
+
         try:
             
             StatusQ = queue.Queue()
             
             self.StatusUpdate("<< Working on it... >>", ClearText = True)
-            self.LoggerOutput = thd.Thread(target = FormatStreamData.FormatStreamData(OutputFiles, InputFiles, doTemperature, DoE_Temperature, self.Verbosity, StatusQ))
+            self.LoggerOutput = thd.Thread(target = FormatStreamData.FormatStreamData, args = (OutputFiles, InputFiles, doTemperature, DoE_Temperature, self.Verbosity, StatusQ))
             self.LoggerOutput.daemon = True
             self.LoggerOutput.start()
             
