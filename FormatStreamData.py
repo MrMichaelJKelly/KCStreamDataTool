@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Sat Mar  9 17:28:08 2019
@@ -11,6 +12,7 @@ import sys
 import datetime
 from dateutil.parser import parse
 import heapq
+import getopt
 import re
 import platform
 from xlrd import open_workbook, XLRDError, xldate
@@ -473,8 +475,11 @@ def mapTemperatureSiteName(siteName):
 # Process one raw data temperature file 
 def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
     
-    global sites, outputCSVSummary
+    global sites
+    global outputCSVSummary
     global DoEOutputOption
+    global verbose
+
     nRows = 0           # Number rows written to output
     ret = True
     
@@ -500,6 +505,7 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
                     # Use the mapping list to standardize sitenames
                     newSiteName = mapTemperatureSiteName(siteName)
                     statusCallback ('Site name in data file {} => {}'.format(siteName,newSiteName))
+                    # Fix - 8/30/2019 - if site name not in mapping, just use site name from data file
                     if newSiteName is None:
                         statusCallback('No mapping for site name, using name in raw data file')
                         logFile.write('No mapping for site name "{}", using name in raw data\n'.format(siteName))
@@ -578,7 +584,7 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
                             siteDataFiles[siteName].write(    'Yellowhawk,"%s","%s","%s",Measurement,NGO,,,,"Water","Fresh/Surface Water","%s","%s",,,"%s","%s","%s",,"TEMPLOGGER"\n' % (instrumentID, siteName, siteName, dt,tm,"Temperature, water",temp,"deg F"))
                         ret = True
                 nRows += 1
-               # sleep(0.5)
+               # sleep(0.5)     # debugging kludge
                 
                 # If encountered a format error - skip out
                 if not ret:
@@ -891,7 +897,7 @@ def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, 
         logPath = os.path.join(outputFolder, "LogFile.txt")
         outputLogFile = open(logPath, 'w')
     except IOError as e:
-        statusCallback('Error opening '+logPath,': '+ str(e))
+        statusCallback('Error opening '+logPath+': '+ str(e))
         return None
 
 
@@ -970,8 +976,10 @@ def helpMessage():
 
 
 def main(argv):
-   
-   # Only supporting Windows for now...
+
+    global verbose
+
+    # Only supporting Windows for now...
     if (platform.system() != 'Windows'):
         print('Sorry, this script is supported only on Windows for now... bug Evan')
         sys.exit(2)
