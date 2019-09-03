@@ -550,9 +550,10 @@ def processTemperatureFile(rawDataFile, logFile, outputFolder, siteDataFiles):
                         # Skip first two rows that are headers - emit data for rows 2... n
                         # Have we seen this site before, i.e. do we have a file for it?
                         if siteName not in siteDataFiles:
-                            if DoEOutputOption:                            
+                            if DoEOutputOption:
+                                todaysDate = time.strftime("%m/%d/%Y")                            
                                 # First time we've seen this site - create a file and emit the header
-                                siteTemperatureFilePath = os.path.join(outputFolder, siteName + "_Temperature_DoE.csv")
+                                siteTemperatureFilePath = os.path.join(outputFolder, siteName + "_Temperature_EIM"+todaysDate+".csv")
                                 siteDataFiles[siteName] = open(siteTemperatureFilePath, 'w')
                                 # Write the CSV header row for the 
                                 # per-site DoE Summary
@@ -921,10 +922,11 @@ def FormatStreamData(outputFolder, inputFolder, doTemperature, DoE_Temperature, 
         statusCallback('Writing to:\n'+outputSummaryPath+'\nand per-site DoE files named Xxxxx_Temperature_DoE.csv\n')
     else:
         # We emit two output files - Summary  which is an aggregated summary of all the data files
-        # we read, and DoESummary which is for input to the DoE site in a format they prescribe.
+        # we read, and DoESummary which is for input to the DoE site (the EIM database) in a format they prescribe.
         outputSummaryPath = os.path.join(outputFolder, 'StreamData.CSV')
         if DoEOutputOption:
-            outputDoESummaryPath = os.path.join(outputFolder, 'HI-9829_For_DoE.CSV')
+            todaysDate = time.strftime("%m/%d/%Y")
+            outputDoESummaryPath = os.path.join(outputFolder, 'HI-9829_EIM_'+todaysDate+'.CSV')
         
             try:
                 outputCSVDoE = open(outputDoESummaryPath, 'w')
